@@ -1,162 +1,223 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
+from datetime import datetime # Esto nos da la fecha y hora
 
 # ==========================================
-# 1. BASE DE DATOS (CON TIPO DE MEDIDA)
+# 1. DATOS DEL NEGOCIO (ESTO NO CAMBIA)
 # ==========================================
-# Agregamos "medida" para saber si es Unidad o Kilo
+NIT_LOCAL = "900.555.222-1"
+NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
+valor_iva = 0.19
+numero_de_factura = 1 # Empezamos con la factura 1
+
+# Inventario: El precio ya tiene el IVA incluido
 inventario = {
-    "POLLO ENTERO": {"precio": 18000.0, "stock": 50.0, "medida": "Peso"},
-    "CUBETA DE HUEVOS": {"precio": 15000.0, "stock": 20.0, "medida": "Unidad"},
-    "QUESO MOZZARELLA": {"precio": 22000.0, "stock": 15.0, "medida": "Peso"}
+    "POLLO POR KILO": {"precio": 18000, "stock": 40.0, "tipo": "Peso"},
+    "CUBETA HUEVOS": {"precio": 16000, "stock": 10.0, "tipo": "Unidad"},
+    "QUESO CAMPESINO": {"precio": 12000, "stock": 15.0, "tipo": "Peso"},
+    "CHORIZO X UNID": {"precio": 3500, "stock": 30.0, "tipo": "Unidad"}
 }
 
-lista_carrito = []
-total_a_pagar = 0
+carrito_de_compras = []
+suma_total_cuenta = 0
 
 # ==========================================
-# 2. FUNCIONES LÓGICAS
+# 2. FUNCIONES (LAS ACCIONES)
 # ==========================================
 
-def cambiar_pantalla(pantalla_nueva):
-    frame_menu.pack_forget()
-    frame_factura.pack_forget()
-    frame_negocio.pack_forget()
-    pantalla_nueva.pack(fill="both", expand=True)
-    actualizar_lista_desplegable()
-    actualizar_tabla_inventario()
+def ir_a_pantalla(pantalla):
+    # Escondemos todas
+    frame_principal.pack_forget()
+    frame_ventas.pack_forget()
+    frame_ajustes.pack_forget()
+    # Mostramos la que elegimos
+    pantalla.pack(fill="both", expand=True)
+    # Actualizamos las listas para que se vea lo nuevo
+    actualizar_menu_productos()
+    actualizar_tabla_negocio()
 
-def agregar_producto():
-    global total_a_pagar
-    producto_nom = combo_productos.get()
-    tipo_medida = inventario[producto_nom]["medida"]
+def sumar_al_carrito():
+    global suma_total_cuenta
     
-    try:
-        valor_entrada = float(entrada_cantidad.get())
-        
-        # Validar si es Unidad, no permitir decimales (ej. 1.5 huevos no se puede)
-        if tipo_medida == "Unidad" and not valor_entrada.is_integer():
-            messagebox.showwarning("Atención", "Este producto se vende por unidades enteras.")
-            return
-        if valor_entrada <= 0:
-            raise ValueError
-    except:
-        messagebox.showerror("Error", "Ingrese un número válido en cantidad/peso.")
+    producto_elegido = combo_elegir_prod.get()
+    if producto_elegido == "":
+        messagebox.showwarning("Ojo", "Selecciona un producto")
         return
 
-    # Verificar disponibilidad
-    if inventario[producto_nom]["stock"] >= valor_entrada:
-        inventario[producto_nom]["stock"] -= valor_entrada
-        
-        precio_unitario = inventario[producto_nom]["precio"]
-        subtotal = precio_unitario * valor_entrada
-        total_a_pagar += subtotal
-        
-        lista_carrito.append((producto_nom, valor_entrada, subtotal))
-        
-        # Mostrar en recibo con su etiqueta (Kg o Und)
-        etiqueta = "Kg" if tipo_medida == "Peso" else "Und"
-        texto = f"• {valor_entrada} {etiqueta} de {producto_nom}\n"
-        texto += f"  Precio: ${precio_unitario:,.0f} | Subtotal: ${subtotal:,.0f}\n"
-        texto += "-"*40 + "\n"
-        pantalla_texto.insert(tk.END, texto)
-        
-        entrada_cantidad.delete(0, tk.END)
-    else:
-        messagebox.showwarning("Sin Stock", "No hay suficiente cantidad disponible.")
+    # Saber si es peso o unidad
+    modo = inventario[producto_elegido]["tipo"]
 
-def finalizar_venta():
-    if not lista_carrito: return
-    # IVA Incluido: Extraemos el 19% del total
-    base = total_a_pagar / 1.19
-    iva = total_a_pagar - base
-    
-    pantalla_texto.insert(tk.END, f"\n{'='*30}\n")
-    pantalla_texto.insert(tk.END, f"SUBTOTAL (Sin IVA): ${base:,.0f}\n")
-    pantalla_texto.insert(tk.END, f"IVA (19%):          ${iva:,.0f}\n")
-    pantalla_texto.insert(tk.END, f"TOTAL A PAGAR:      ${total_a_pagar:,.0f}\n")
-    pantalla_texto.insert(tk.END, f"{'='*30}\n")
-    
-    btn_sumar.config(state="disabled")
-    btn_pagar.config(state="disabled")
-
-def guardar_en_inventario():
-    nom = entry_nom_inv.get().upper()
-    medida = combo_medida_inv.get()
     try:
-        pre = float(entry_pre_inv.get())
-        sto = float(entry_sto_inv.get())
-        
-        inventario[nom] = {"precio": pre, "stock": sto, "medida": medida}
-        messagebox.showinfo("Éxito", f"{nom} guardado como {medida}")
-        
-        # Limpiar
-        entry_nom_inv.delete(0, tk.END)
-        entry_pre_inv.delete(0, tk.END)
-        entry_sto_inv.delete(0, tk.END)
-        actualizar_tabla_inventario()
+        cantidad_ingresada = float(entrada_cuanto.get())
+        # Si es unidad, no dejamos vender 1.5
+        if modo == "Unidad" and not cantidad_ingresada.is_integer():
+            messagebox.showerror("Error", "Este producto solo se vende por unidades (1, 2, 3...)")
+            return
+        if cantidad_ingresada <= 0:
+            messagebox.showerror("Error", "La cantidad debe ser mayor a cero")
+            return
     except:
-        messagebox.showerror("Error", "Llene los campos de precio y stock con números.")
+        messagebox.showerror("Error", "Escribe solo números en la cantidad")
+        return
 
-# --- ACTUALIZADORES ---
-def actualizar_lista_desplegable():
-    combo_productos['values'] = list(inventario.keys())
+    # Revisar si hay en el estante (stock)
+    if inventario[producto_elegido]["stock"] >= cantidad_ingresada:
+        # Restamos del inventario
+        inventario[producto_elegido]["stock"] -= cantidad_ingresada
+        
+        # Calculamos precio
+        precio_item = inventario[producto_elegido]["precio"]
+        total_item = precio_item * cantidad_ingresada
+        
+        # Guardamos en nuestra lista de esta venta
+        suma_total_cuenta += total_item
+        carrito_de_compras.append([producto_elegido, cantidad_ingresada, precio_item, total_item])
+        
+        # Escribimos en el papel de la factura
+        medida = "Kg" if modo == "Peso" else "Und"
+        linea = f"{cantidad_ingresada} {medida} x {producto_elegido}\n"
+        linea += f"   Valor Unit: ${precio_item:,.0f} | Sub: ${total_item:,.0f}\n"
+        papel_factura.insert(tk.END, linea)
+        
+        entrada_cuanto.delete(0, tk.END)
+    else:
+        messagebox.showwarning("Agotado", "No tienes tanta mercancía en el estante")
 
-def actualizar_tabla_inventario():
-    for f in tabla_inv.get_children(): tabla_inv.delete(f)
+def crear_factura_final():
+    global numero_de_factura
+    
+    nombre_cli = entrada_nombre_cli.get()
+    cedula_cli = entrada_cedula_cli.get()
+
+    if nombre_cli == "" or cedula_cli == "" or not carrito_de_compras:
+        messagebox.showwarning("Faltan datos", "Escribe los datos del cliente y agrega productos")
+        return
+
+    # Sacamos el IVA (Precio / 1.19)
+    subtotal_sin_iva = suma_total_cuenta / (1 + valor_iva)
+    iva_calculado = suma_total_cuenta - subtotal_sin_iva
+    fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    # Limpiamos y escribimos el encabezado real
+    papel_factura.delete(1.0, tk.END)
+    papel_factura.insert(tk.END, f"{NOMBRE_LOCAL}\n")
+    papel_factura.insert(tk.END, f"NIT: {NIT_LOCAL}\n")
+    papel_factura.insert(tk.END, f"Factura No: {numero_de_factura}\n")
+    papel_factura.insert(tk.END, f"Fecha: {fecha_hoy}\n")
+    papel_factura.insert(tk.END, "-"*35 + "\n")
+    papel_factura.insert(tk.END, f"CLIENTE: {nombre_cli.upper()}\n")
+    papel_factura.insert(tk.END, f"CC/NIT:  {cedula_cli}\n")
+    papel_factura.insert(tk.END, f"PAGO:    {combo_forma_pago.get()}\n")
+    papel_factura.insert(tk.END, "="*35 + "\n")
+
+    # Ponemos otra vez los productos
+    for item in carrito_de_compras:
+        papel_factura.insert(tk.END, f"{item[1]} x {item[0]} -> ${item[3]:,.0f}\n")
+
+    # Totales
+    papel_factura.insert(tk.END, "="*35 + "\n")
+    papel_factura.insert(tk.END, f"SUBTOTAL:      ${subtotal_sin_iva:,.0f}\n")
+    papel_factura.insert(tk.END, f"IVA (19%):     ${iva_calculado:,.0f}\n")
+    papel_factura.insert(tk.END, f"TOTAL A PAGAR: ${suma_total_cuenta:,.0f}\n")
+    papel_factura.insert(tk.END, "="*35 + "\n")
+    papel_factura.insert(tk.END, " ¡GRACIAS POR SU COMPRA! ")
+
+    numero_de_factura += 1 # La próxima factura será la siguiente
+    boton_add.config(state="disabled")
+
+def nueva_venta_limpia():
+    global suma_total_cuenta, carrito_de_compras
+    suma_total_cuenta = 0
+    carrito_de_compras = []
+    papel_factura.delete(1.0, tk.END)
+    entrada_nombre_cli.delete(0, tk.END)
+    entrada_cedula_cli.delete(0, tk.END)
+    boton_add.config(state="normal")
+
+# --- FUNCIONES DEL NEGOCIO ---
+
+def actualizar_menu_productos():
+    combo_elegir_prod['values'] = list(inventario.keys())
+
+def actualizar_tabla_negocio():
+    for dato in tabla_stock.get_children():
+        tabla_stock.delete(dato)
     for p, d in inventario.items():
-        tabla_inv.insert("", tk.END, values=(p, f"${d['precio']:,.0f}", d['stock'], d['medida']))
+        tabla_stock.insert("", tk.END, values=(p, f"${d['precio']:,.0f}", d['stock'], d['tipo']))
+
+def guardar_en_estante():
+    n = entrada_nuevo_nombre.get().upper()
+    try:
+        p = float(entrada_nuevo_precio.get())
+        s = float(entrada_nuevo_stock.get())
+        t = combo_nuevo_tipo.get()
+        inventario[n] = {"precio": p, "stock": s, "tipo": t}
+        messagebox.showinfo("Listo", "Producto guardado")
+        actualizar_tabla_negocio()
+    except:
+        messagebox.showerror("Error", "Revisa que el precio y stock sean números")
 
 # ==========================================
-# 3. INTERFAZ GRÁFICA (Paso a Paso)
+# 3. LA VENTANA (EL DIBUJO)
 # ==========================================
-root = tk.Tk()
-root.title("RIVENTS - Pollo y Charcutería")
-root.geometry("480x750")
+ventana = tk.Tk()
+ventana.title("SISTEMA RAUL - PRINCIPIANTE")
+ventana.geometry("480x800")
 
-# PANTALLA: MENÚ
-frame_menu = tk.Frame(root)
-tk.Label(frame_menu, text="SISTEMA DE VENTAS RAUL", font=("Arial", 14, "bold")).pack(pady=40)
-tk.Button(frame_menu, text="🛒 NUEVA VENTA", bg="#AED6F1", width=25, height=2, command=lambda: cambiar_pantalla(frame_factura)).pack(pady=10)
-tk.Button(frame_menu, text="📦 GESTIÓN DE NEGOCIO", bg="#ABEBC6", width=25, height=2, command=lambda: cambiar_pantalla(frame_negocio)).pack(pady=10)
-tk.Button(frame_menu, text="SALIR", command=root.quit).pack(pady=40)
-frame_menu.pack()
+# --- PANTALLA MENU ---
+frame_principal = tk.Frame(ventana)
+tk.Label(frame_principal, text=NOMBRE_LOCAL, font=("Arial", 14, "bold")).pack(pady=50)
+tk.Button(frame_principal, text="1. VENDER", bg="lightblue", width=20, height=2, command=lambda: ir_a_pantalla(frame_ventas)).pack(pady=10)
+tk.Button(frame_principal, text="2. INVENTARIO", bg="lightgreen", width=20, height=2, command=lambda: ir_a_pantalla(frame_ajustes)).pack(pady=10)
+tk.Button(frame_principal, text="CERRAR", command=ventana.quit).pack(pady=50)
+frame_principal.pack()
 
-# PANTALLA: FACTURACIÓN
-frame_factura = tk.Frame(root, padx=20)
-tk.Button(frame_factura, text="<- Volver", command=lambda: cambiar_pantalla(frame_menu)).pack(anchor="w", pady=5)
-tk.Label(frame_factura, text="PRODUCTO:").pack(anchor="w")
-combo_productos = ttk.Combobox(frame_factura, state="readonly", font=("Arial", 11))
-combo_productos.pack(fill="x", pady=5)
-tk.Label(frame_factura, text="CANTIDAD / PESO:").pack(anchor="w")
-entrada_cantidad = tk.Entry(frame_factura, font=("Arial", 12))
-entrada_cantidad.pack(fill="x", pady=5)
-btn_sumar = tk.Button(frame_factura, text="AGREGAR", bg="#5DADE2", fg="white", command=agregar_producto)
-btn_sumar.pack(fill="x", pady=10)
-pantalla_texto = tk.Text(frame_factura, height=15, font=("Courier", 10))
-pantalla_texto.pack(fill="x")
-btn_pagar = tk.Button(frame_factura, text="COBRAR FACTURA", bg="#52BE80", fg="white", font=("Arial", 12, "bold"), command=finalizar_venta)
-btn_pagar.pack(fill="x", pady=5)
-tk.Button(frame_factura, text="Limpiar", command=lambda: [pantalla_texto.delete(1.0, tk.END), btn_sumar.config(state="normal"), btn_pagar.config(state="normal")]).pack()
+# --- PANTALLA VENTAS ---
+frame_ventas = tk.Frame(ventana, padx=20)
+tk.Button(frame_ventas, text="<- Volver", command=lambda: ir_a_pantalla(frame_principal)).pack(anchor="w")
 
-# PANTALLA: NEGOCIO
-frame_negocio = tk.Frame(root, padx=20)
-tk.Button(frame_negocio, text="<- Volver", command=lambda: cambiar_pantalla(frame_menu)).pack(anchor="w", pady=5)
-# Tabla
-cols = ("Prod", "Precio", "Stock", "Medida")
-tabla_inv = ttk.Treeview(frame_negocio, columns=cols, show="headings", height=6)
-for c in cols: tabla_inv.heading(c, text=c); tabla_inv.column(c, width=100)
-tabla_inv.pack(fill="x", pady=10)
-# Entradas
-tk.Label(frame_negocio, text="Nombre:").pack(anchor="w")
-entry_nom_inv = tk.Entry(frame_negocio); entry_nom_inv.pack(fill="x")
-tk.Label(frame_negocio, text="Precio (IVA Inc):").pack(anchor="w")
-entry_pre_inv = tk.Entry(frame_negocio); entry_pre_inv.pack(fill="x")
-tk.Label(frame_negocio, text="Stock inicial:").pack(anchor="w")
-entry_sto_inv = tk.Entry(frame_negocio); entry_sto_inv.pack(fill="x")
-tk.Label(frame_negocio, text="Se vende por:").pack(anchor="w")
-combo_medida_inv = ttk.Combobox(frame_negocio, values=["Peso", "Unidad"], state="readonly")
-combo_medida_inv.current(0); combo_medida_inv.pack(fill="x", pady=5)
-tk.Button(frame_negocio, text="GUARDAR CAMBIOS", bg="#F4D03F", font=("Arial", 10, "bold"), command=guardar_en_inventario).pack(fill="x", pady=20)
+tk.Label(frame_ventas, text="NOMBRE CLIENTE:").pack(anchor="w")
+entrada_nombre_cli = tk.Entry(frame_ventas); entrada_nombre_cli.pack(fill="x")
+tk.Label(frame_ventas, text="CEDULA CLIENTE:").pack(anchor="w")
+entrada_cedula_cli = tk.Entry(frame_ventas); entrada_cedula_cli.pack(fill="x")
+tk.Label(frame_ventas, text="FORMA DE PAGO:").pack(anchor="w")
+combo_forma_pago = ttk.Combobox(frame_ventas, values=["Efectivo", "Nequi/Daviplata", "Tarjeta"], state="readonly")
+combo_forma_pago.current(0); combo_forma_pago.pack(fill="x")
 
-root.mainloop()
+tk.Label(frame_ventas, text="ELIGE EL PRODUCTO:").pack(anchor="w", pady=5)
+combo_elegir_prod = ttk.Combobox(frame_ventas, state="readonly")
+combo_elegir_prod.pack(fill="x")
+tk.Label(frame_ventas, text="¿CUÁNTO? (Peso o Unidades):").pack(anchor="w")
+entrada_cuanto = tk.Entry(frame_ventas); entrada_cuanto.pack(fill="x")
+
+boton_add = tk.Button(frame_ventas, text="AGREGAR", bg="skyblue", command=sumar_al_carrito)
+boton_add.pack(fill="x", pady=10)
+
+papel_factura = tk.Text(frame_ventas, height=12, font=("Courier", 10), bg="white")
+papel_factura.pack(fill="x")
+
+tk.Button(frame_ventas, text="GENERAR FACTURA", bg="lightgreen", font=("Arial", 10, "bold"), command=crear_factura_final).pack(fill="x", pady=5)
+tk.Button(frame_ventas, text="NUEVA VENTA", command=nueva_venta_limpia).pack()
+
+# --- PANTALLA INVENTARIO ---
+frame_ajustes = tk.Frame(ventana, padx=20)
+tk.Button(frame_ajustes, text="<- Volver", command=lambda: ir_a_pantalla(frame_principal)).pack(anchor="w")
+
+cols = ("Producto", "Precio", "Stock", "Tipo")
+tabla_stock = ttk.Treeview(frame_ajustes, columns=cols, show="headings", height=8)
+for c in cols: tabla_stock.heading(c, text=c); tabla_stock.column(c, width=90)
+tabla_stock.pack(fill="x", pady=10)
+
+tk.Label(frame_ajustes, text="Nombre:").pack(anchor="w")
+entrada_nuevo_nombre = tk.Entry(frame_ajustes); entrada_nuevo_nombre.pack(fill="x")
+tk.Label(frame_ajustes, text="Precio con IVA:").pack(anchor="w")
+entrada_nuevo_precio = tk.Entry(frame_ajustes); entrada_nuevo_precio.pack(fill="x")
+tk.Label(frame_ajustes, text="Stock Actual:").pack(anchor="w")
+entrada_nuevo_stock = tk.Entry(frame_ajustes); entrada_nuevo_stock.pack(fill="x")
+tk.Label(frame_ajustes, text="Se vende por:").pack(anchor="w")
+combo_nuevo_tipo = ttk.Combobox(frame_ajustes, values=["Peso", "Unidad"], state="readonly")
+combo_nuevo_tipo.current(0); combo_nuevo_tipo.pack(fill="x")
+
+tk.Button(frame_ajustes, text="GUARDAR CAMBIOS", bg="orange", command=guardar_en_estante).pack(fill="x", pady=20)
+
+ventana.mainloop()
