@@ -76,7 +76,7 @@ def generar_factura():
 
 # 3. CREACIÓN DE LA VENTANA (INTERFAZ)
 ventana = tk.Tk()
-ventana.title(f"RIVENT - {nombre_local}")
+ventana.title(f"RIVENTS - {nombre_local}")
 ventana.geometry("400x600") # Ancho x Alto
 ventana.config(padx=20, pady=20)
 
