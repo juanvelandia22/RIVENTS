@@ -1,166 +1,162 @@
-
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 # ==========================================
-# 1. DATOS E INVENTARIO (IVA 19% INCLUIDO)
+# 1. BASE DE DATOS (CON TIPO DE MEDIDA)
 # ==========================================
-nombre_local = "POLLO Y CHARCUTERIA RAUL"
-porcentaje_iva = 0.19
-
-# Los precios aquí son el valor FINAL que paga el cliente
+# Agregamos "medida" para saber si es Unidad o Kilo
 inventario = {
-    "SALCHICHAS ZENU": {"precio": 45000, "stock": 10},
-    "QUESO MOZZARELLA": {"precio": 12000, "stock": 5},
-    "JAMON AHUMADO": {"precio": 20000, "stock": 15}
+    "POLLO ENTERO": {"precio": 18000.0, "stock": 50.0, "medida": "Peso"},
+    "CUBETA DE HUEVOS": {"precio": 15000.0, "stock": 20.0, "medida": "Unidad"},
+    "QUESO MOZZARELLA": {"precio": 22000.0, "stock": 15.0, "medida": "Peso"}
 }
 
-carrito = []
-total_operacion = 0
+lista_carrito = []
+total_a_pagar = 0
 
 # ==========================================
-# 2. LÓGICA DE NAVEGACIÓN
+# 2. FUNCIONES LÓGICAS
 # ==========================================
-def abrir_modulo(frame):
-    """Simula la entrada a un módulo del ciclo"""
+
+def cambiar_pantalla(pantalla_nueva):
     frame_menu.pack_forget()
-    frame_facturacion.pack_forget()
-    frame_inventario.pack_forget()
-    frame.pack(fill="both", expand=True)
-    
-    if frame == frame_facturacion:
-        actualizar_opciones_productos()
-    elif frame == frame_inventario:
-        refrescar_tabla_inventario()
+    frame_factura.pack_forget()
+    frame_negocio.pack_forget()
+    pantalla_nueva.pack(fill="both", expand=True)
+    actualizar_lista_desplegable()
+    actualizar_tabla_inventario()
 
-# ==========================================
-# 3. MÓDULO: TOMA DE PEDIDOS Y FACTURACIÓN
-# ==========================================
-def agregar_item():
-    global total_operacion
-    prod_seleccionado = combo_productos.get()
+def agregar_producto():
+    global total_a_pagar
+    producto_nom = combo_productos.get()
+    tipo_medida = inventario[producto_nom]["medida"]
     
     try:
-        cantidad = int(entrada_cantidad.get())
-        if cantidad <= 0: raise ValueError
-    except ValueError:
-        messagebox.showerror("Error", "Ingrese una cantidad válida.")
+        valor_entrada = float(entrada_cantidad.get())
+        
+        # Validar si es Unidad, no permitir decimales (ej. 1.5 huevos no se puede)
+        if tipo_medida == "Unidad" and not valor_entrada.is_integer():
+            messagebox.showwarning("Atención", "Este producto se vende por unidades enteras.")
+            return
+        if valor_entrada <= 0:
+            raise ValueError
+    except:
+        messagebox.showerror("Error", "Ingrese un número válido en cantidad/peso.")
         return
 
-    if prod_seleccionado in inventario:
-        if inventario[prod_seleccionado]["stock"] >= cantidad:
-            # Lógica de IVA incluido
-            precio_unitario = inventario[prod_seleccionado]["precio"]
-            subtotal_item = precio_unitario * cantidad
-            
-            inventario[prod_seleccionado]["stock"] -= cantidad
-            total_operacion += subtotal_item
-            carrito.append((prod_seleccionado, cantidad, precio_unitario, subtotal_item))
-            
-            # Formato solicitado: Cantidad x Producto (Unitario con IVA) = Total
-            pantalla_factura.insert(tk.END, f" {cantidad}x {prod_seleccionado}\n")
-            pantalla_factura.insert(tk.END, f"   Unit: ${precio_unitario:,.0f} | Sub: ${subtotal_item:,.0f}\n")
-            pantalla_factura.insert(tk.END, "-"*30 + "\n")
-            
-            entrada_cantidad.delete(0, tk.END)
-        else:
-            messagebox.showwarning("Sin Stock", "No hay suficiente mercancía.")
+    # Verificar disponibilidad
+    if inventario[producto_nom]["stock"] >= valor_entrada:
+        inventario[producto_nom]["stock"] -= valor_entrada
+        
+        precio_unitario = inventario[producto_nom]["precio"]
+        subtotal = precio_unitario * valor_entrada
+        total_a_pagar += subtotal
+        
+        lista_carrito.append((producto_nom, valor_entrada, subtotal))
+        
+        # Mostrar en recibo con su etiqueta (Kg o Und)
+        etiqueta = "Kg" if tipo_medida == "Peso" else "Und"
+        texto = f"• {valor_entrada} {etiqueta} de {producto_nom}\n"
+        texto += f"  Precio: ${precio_unitario:,.0f} | Subtotal: ${subtotal:,.0f}\n"
+        texto += "-"*40 + "\n"
+        pantalla_texto.insert(tk.END, texto)
+        
+        entrada_cantidad.delete(0, tk.END)
+    else:
+        messagebox.showwarning("Sin Stock", "No hay suficiente cantidad disponible.")
 
-def finalizar_factura():
-    if not carrito: return
+def finalizar_venta():
+    if not lista_carrito: return
+    # IVA Incluido: Extraemos el 19% del total
+    base = total_a_pagar / 1.19
+    iva = total_a_pagar - base
     
-    # Desglose de IVA (El precio ya lo incluía, así que lo extraemos)
-    # Formula: Base = Total / (1 + IVA)
-    base_gravable = total_operacion / (1 + porcentaje_iva)
-    valor_iva = total_operacion - base_gravable
+    pantalla_texto.insert(tk.END, f"\n{'='*30}\n")
+    pantalla_texto.insert(tk.END, f"SUBTOTAL (Sin IVA): ${base:,.0f}\n")
+    pantalla_texto.insert(tk.END, f"IVA (19%):          ${iva:,.0f}\n")
+    pantalla_texto.insert(tk.END, f"TOTAL A PAGAR:      ${total_a_pagar:,.0f}\n")
+    pantalla_texto.insert(tk.END, f"{'='*30}\n")
     
-    pantalla_factura.insert(tk.END, "\n" + "="*30 + "\n")
-    pantalla_factura.insert(tk.END, f" TOTAL NETO:   ${total_operacion:,.0f}\n")
-    pantalla_factura.insert(tk.END, f" (Base: ${base_gravable:,.0f} | IVA 19%: ${valor_iva:,.0f})\n")
-    pantalla_factura.insert(tk.END, "="*30 + "\n")
-    
-    btn_add.config(state="disabled")
-    btn_pay.config(state="disabled")
+    btn_sumar.config(state="disabled")
+    btn_pagar.config(state="disabled")
 
-def limpiar_pantalla_venta():
-    global total_operacion, carrito
-    total_operacion = 0
-    carrito = []
-    pantalla_factura.delete(1.0, tk.END)
-    btn_add.config(state="normal")
-    btn_pay.config(state="normal")
+def guardar_en_inventario():
+    nom = entry_nom_inv.get().upper()
+    medida = combo_medida_inv.get()
+    try:
+        pre = float(entry_pre_inv.get())
+        sto = float(entry_sto_inv.get())
+        
+        inventario[nom] = {"precio": pre, "stock": sto, "medida": medida}
+        messagebox.showinfo("Éxito", f"{nom} guardado como {medida}")
+        
+        # Limpiar
+        entry_nom_inv.delete(0, tk.END)
+        entry_pre_inv.delete(0, tk.END)
+        entry_sto_inv.delete(0, tk.END)
+        actualizar_tabla_inventario()
+    except:
+        messagebox.showerror("Error", "Llene los campos de precio y stock con números.")
 
-def actualizar_opciones_productos():
+# --- ACTUALIZADORES ---
+def actualizar_lista_desplegable():
     combo_productos['values'] = list(inventario.keys())
 
-# ==========================================
-# 4. MÓDULO: INTERACCIÓN CON EL NEGOCIO
-# ==========================================
-def refrescar_tabla_inventario():
-    for i in tabla.get_children(): tabla.delete(i)
+def actualizar_tabla_inventario():
+    for f in tabla_inv.get_children(): tabla_inv.delete(f)
     for p, d in inventario.items():
-        tabla.insert("", tk.END, values=(p, f"${d['precio']:,.0f}", d['stock']))
-
-def modificar_inventario():
-    nom = ent_inv_nom.get().upper().strip()
-    try:
-        pre = float(ent_inv_pre.get())
-        can = int(ent_inv_can.get())
-    except:
-        messagebox.showerror("Error", "Datos numéricos incorrectos.")
-        return
-
-    if nom:
-        inventario[nom] = {"precio": pre, "stock": can}
-        messagebox.showinfo("Éxito", "Inventario actualizado.")
-        ent_inv_nom.delete(0, tk.END); ent_inv_pre.delete(0, tk.END); ent_inv_can.delete(0, tk.END)
-        refrescar_tabla_inventario()
+        tabla_inv.insert("", tk.END, values=(p, f"${d['precio']:,.0f}", d['stock'], d['medida']))
 
 # ==========================================
-# 5. VENTANA PRINCIPAL Y DISEÑO
+# 3. INTERFAZ GRÁFICA (Paso a Paso)
 # ==========================================
 root = tk.Tk()
-root.title(f"SISTEMA {nombre_local}")
-root.geometry("480x700")
+root.title("RIVENTS - Pollo y Charcutería")
+root.geometry("480x750")
 
-# --- MENÚ PRINCIPAL ---
-frame_menu = tk.Frame(root, pady=50)
-tk.Label(frame_menu, text=nombre_local, font=("Arial", 14, "bold")).pack(pady=20)
-tk.Button(frame_menu, text="1. TOMA DE PEDIDO", width=25, height=2, bg="#D5F5E3", command=lambda: abrir_modulo(frame_facturacion)).pack(pady=10)
-tk.Button(frame_menu, text="2. INTERACTUAR CON NEGOCIO", width=25, height=2, bg="#D6EAF8", command=lambda: abrir_modulo(frame_inventario)).pack(pady=10)
-tk.Button(frame_menu, text="3. SALIR", width=10, command=root.quit).pack(pady=50)
+# PANTALLA: MENÚ
+frame_menu = tk.Frame(root)
+tk.Label(frame_menu, text="SISTEMA DE VENTAS RAUL", font=("Arial", 14, "bold")).pack(pady=40)
+tk.Button(frame_menu, text="🛒 NUEVA VENTA", bg="#AED6F1", width=25, height=2, command=lambda: cambiar_pantalla(frame_factura)).pack(pady=10)
+tk.Button(frame_menu, text="📦 GESTIÓN DE NEGOCIO", bg="#ABEBC6", width=25, height=2, command=lambda: cambiar_pantalla(frame_negocio)).pack(pady=10)
+tk.Button(frame_menu, text="SALIR", command=root.quit).pack(pady=40)
 frame_menu.pack()
 
-# --- INTERFAZ DE FACTURACIÓN ---
-frame_facturacion = tk.Frame(root, padx=20)
-tk.Button(frame_facturacion, text="Volver al Menú", command=lambda: abrir_modulo(frame_menu)).pack(anchor="w", pady=5)
-tk.Label(frame_facturacion, text="PRODUCTO:").pack(anchor="w")
-combo_productos = ttk.Combobox(frame_facturacion, state="readonly")
+# PANTALLA: FACTURACIÓN
+frame_factura = tk.Frame(root, padx=20)
+tk.Button(frame_factura, text="<- Volver", command=lambda: cambiar_pantalla(frame_menu)).pack(anchor="w", pady=5)
+tk.Label(frame_factura, text="PRODUCTO:").pack(anchor="w")
+combo_productos = ttk.Combobox(frame_factura, state="readonly", font=("Arial", 11))
 combo_productos.pack(fill="x", pady=5)
-tk.Label(frame_facturacion, text="CANTIDAD:").pack(anchor="w")
-entrada_cantidad = tk.Entry(frame_facturacion)
+tk.Label(frame_factura, text="CANTIDAD / PESO:").pack(anchor="w")
+entrada_cantidad = tk.Entry(frame_factura, font=("Arial", 12))
 entrada_cantidad.pack(fill="x", pady=5)
-btn_add = tk.Button(frame_facturacion, text="Agregar", bg="lightblue", command=agregar_item)
-btn_add.pack(fill="x", pady=5)
-pantalla_factura = tk.Text(frame_facturacion, height=15, font=("Courier", 9))
-pantalla_factura.pack(fill="x", pady=5)
-btn_pay = tk.Button(frame_facturacion, text="FACTURAR", bg="lightgreen", command=finalizar_factura)
-btn_pay.pack(fill="x", pady=2)
-tk.Button(frame_facturacion, text="NUEVA VENTA", command=limpiar_pantalla_venta).pack(fill="x", pady=2)
+btn_sumar = tk.Button(frame_factura, text="AGREGAR", bg="#5DADE2", fg="white", command=agregar_producto)
+btn_sumar.pack(fill="x", pady=10)
+pantalla_texto = tk.Text(frame_factura, height=15, font=("Courier", 10))
+pantalla_texto.pack(fill="x")
+btn_pagar = tk.Button(frame_factura, text="COBRAR FACTURA", bg="#52BE80", fg="white", font=("Arial", 12, "bold"), command=finalizar_venta)
+btn_pagar.pack(fill="x", pady=5)
+tk.Button(frame_factura, text="Limpiar", command=lambda: [pantalla_texto.delete(1.0, tk.END), btn_sumar.config(state="normal"), btn_pagar.config(state="normal")]).pack()
 
-# --- INTERFAZ DE NEGOCIO ---
-frame_inventario = tk.Frame(root, padx=20)
-tk.Button(frame_inventario, text="Volver al Menú", command=lambda: abrir_modulo(frame_menu)).pack(anchor="w", pady=5)
-cols = ("Prod", "Precio (IVA inc)", "Stock")
-tabla = ttk.Treeview(frame_inventario, columns=cols, show="headings", height=8)
-for c in cols: tabla.heading(c, text=c); tabla.column(c, width=100)
-tabla.pack(fill="x", pady=10)
-tk.Label(frame_inventario, text="Producto:").pack(anchor="w")
-ent_inv_nom = tk.Entry(frame_inventario); ent_inv_nom.pack(fill="x")
-tk.Label(frame_inventario, text="Precio con IVA:").pack(anchor="w")
-ent_inv_pre = tk.Entry(frame_inventario); ent_inv_pre.pack(fill="x")
-tk.Label(frame_inventario, text="Stock:").pack(anchor="w")
-ent_inv_can = tk.Entry(frame_inventario); ent_inv_can.pack(fill="x")
-tk.Button(frame_inventario, text="GUARDAR CAMBIOS", bg="orange", command=modificar_inventario).pack(fill="x", pady=20)
+# PANTALLA: NEGOCIO
+frame_negocio = tk.Frame(root, padx=20)
+tk.Button(frame_negocio, text="<- Volver", command=lambda: cambiar_pantalla(frame_menu)).pack(anchor="w", pady=5)
+# Tabla
+cols = ("Prod", "Precio", "Stock", "Medida")
+tabla_inv = ttk.Treeview(frame_negocio, columns=cols, show="headings", height=6)
+for c in cols: tabla_inv.heading(c, text=c); tabla_inv.column(c, width=100)
+tabla_inv.pack(fill="x", pady=10)
+# Entradas
+tk.Label(frame_negocio, text="Nombre:").pack(anchor="w")
+entry_nom_inv = tk.Entry(frame_negocio); entry_nom_inv.pack(fill="x")
+tk.Label(frame_negocio, text="Precio (IVA Inc):").pack(anchor="w")
+entry_pre_inv = tk.Entry(frame_negocio); entry_pre_inv.pack(fill="x")
+tk.Label(frame_negocio, text="Stock inicial:").pack(anchor="w")
+entry_sto_inv = tk.Entry(frame_negocio); entry_sto_inv.pack(fill="x")
+tk.Label(frame_negocio, text="Se vende por:").pack(anchor="w")
+combo_medida_inv = ttk.Combobox(frame_negocio, values=["Peso", "Unidad"], state="readonly")
+combo_medida_inv.current(0); combo_medida_inv.pack(fill="x", pady=5)
+tk.Button(frame_negocio, text="GUARDAR CAMBIOS", bg="#F4D03F", font=("Arial", 10, "bold"), command=guardar_en_inventario).pack(fill="x", pady=20)
 
 root.mainloop()
