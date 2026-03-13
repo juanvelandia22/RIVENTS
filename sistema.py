@@ -1,11 +1,12 @@
 
-from flask import Flask, render_template_string, request, redirect, session
+from flask import Flask, render_template_string, request, redirect, session, send_file
 import sqlite3
 from datetime import datetime
 import os
+from fpdf import FPDF
+import io
 
 app = Flask(__name__)
-# Clave secreta necesaria para usar sesiones (puedes cambiar 'super-secreta')
 app.secret_key = 'pollo_raul_secret_key'
 
 # ==============================
@@ -15,7 +16,6 @@ NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 VALOR_IVA = 0.19
 
 def get_db_connection():
-    # En Vercel, /tmp es el único lugar con permisos de escritura para SQLite
     db_path = os.path.join('/tmp', 'pos.db') if os.environ.get('VERCEL') else 'pos.db'
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -32,14 +32,14 @@ def init_db():
             subtotal REAL, iva REAL, total REAL, 
             fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             cliente_nombre TEXT, 
-            cliente_documento TEXT)""")
+            cliente_documento TEXT,
+            detalles_json TEXT)""") # Guardamos los productos vendidos
         conn.commit()
 
-# Inicializamos la base de datos al arrancar
 init_db()
 
 # ==============================
-# INTERFAZ (HTML/CSS) - Igual a la tuya con ajustes de sesión
+# INTERFAZ (HTML/CSS)
 # ==============================
 HTML_SISTEMA = """
 <!DOCTYPE html>
@@ -58,6 +58,7 @@ HTML_SISTEMA = """
         input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
         button { background: #3498db; color: white; border: none; font-weight: bold; cursor: pointer; }
         .btn-success { background: #2ecc71; }
+        .btn-pdf { background: #e74c3c; padding: 5px 10px; font-size: 12px; width: auto; }
         .total-display { font-size: 24px; font-weight: bold; color: #27ae60; margin: 15px 0; border: 2px dashed #2ecc71; padding: 10px; text-align: center; }
         .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; background: #e8f4fd; color: #3498db; }
     </style>
@@ -102,7 +103,7 @@ HTML_SISTEMA = """
                     {% for p in inventario %}<option value="{{ p.producto }}">{% endfor %}
                 </datalist>
                 <input type="number" step="0.01" name="cantidad" placeholder="Cantidad" required>
-                <button type="submit">Agregar</button>
+                <button type="submit">Agregar al Carrito</button>
             </form>
             <hr>
             <h3>👤 Cliente: {{ cliente.nombre }}</h3>
@@ -118,7 +119,7 @@ HTML_SISTEMA = """
                 {% for item in carrito %}
                 <p>✅ {{ item.cantidad }} x {{ item.nombre }} = ${{ "{:,.0f}".format(item.total) }}</p>
                 {% endfor %}
-                <a href="/venta/finalizar"><button class="btn-success">FINALIZAR VENTA</button></a>
+                <a href="/venta/finalizar"><button class="btn-success">FINALIZAR E IMPRIMIR</button></a>
                 <a href="/carrito/limpiar"><button style="background:#e74c3c; margin-top:5px;">VACIAR CARRITO</button></a>
             {% endif %}
         </div>
@@ -126,7 +127,7 @@ HTML_SISTEMA = """
         <div class="card full-width">
             <h2>📊 Historial Reciente</h2>
             <table>
-                <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th></tr></thead>
+                <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Acción</th></tr></thead>
                 <tbody>
                     {% for f in historial %}
                     <tr>
@@ -134,6 +135,7 @@ HTML_SISTEMA = """
                         <td>{{ f.fecha[:16] }}</td>
                         <td>{{ f.cliente_nombre }}</td>
                         <td><strong>${{ "{:,.0f}".format(f.total) }}</strong></td>
+                        <td><a href="/factura/pdf/{{ f.id }}" target="_blank"><button class="btn-pdf">PDF</button></a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -145,8 +147,9 @@ HTML_SISTEMA = """
 """
 
 # ==============================
-# RUTAS
+# RUTAS DE LÓGICA
 # ==============================
+
 @app.route("/")
 def index():
     if 'carrito' not in session: session['carrito'] = []
@@ -159,9 +162,98 @@ def index():
     
     total = sum(item['total'] for item in session['carrito'])
     return render_template_string(HTML_SISTEMA, nombre=NOMBRE_LOCAL, inventario=inv, 
-                                 carrito=session['carrito'], total_venta=total, 
-                                 cliente=session['cliente'], historial=his)
+                                   carrito=session['carrito'], total_venta=total, 
+                                   cliente=session['cliente'], historial=his)
 
+@app.route("/venta/finalizar")
+def finalizar():
+    carrito = session.get('carrito', [])
+    if not carrito: return redirect("/")
+    
+    total = sum(item['total'] for item in carrito)
+    sub = total / (1 + VALOR_IVA)
+    iva = total - sub
+    cliente = session.get('cliente')
+    
+    # Guardamos los items como string para el PDF (puedes usar JSON si prefieres)
+    detalles = "|".join([f"{i['nombre']},{i['cantidad']},{i['total']}" for i in carrito])
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""INSERT INTO facturas (subtotal, iva, total, cliente_nombre, cliente_documento, detalles_json) 
+                      VALUES (?,?,?,?,?,?)""", 
+                   (sub, iva, total, cliente['nombre'], cliente['documento'], detalles))
+    factura_id = cursor.lastrowid
+    
+    for item in carrito:
+        conn.execute("UPDATE inventario SET stock = stock - ? WHERE producto = ?", (item['cantidad'], item['nombre']))
+    
+    conn.commit()
+    conn.close()
+    session['carrito'] = []
+    
+    # Redirigir directamente a la generación del PDF
+    return redirect(url_for('generar_pdf', id_factura=factura_id))
+
+@app.route("/factura/pdf/<int:id_factura>")
+def generar_pdf(id_factura):
+    conn = get_db_connection()
+    f = conn.execute("SELECT * FROM facturas WHERE id = ?", (id_factura,)).fetchone()
+    conn.close()
+    
+    if not f: return "Factura no encontrada", 404
+
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Encabezado
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(190, 10, NOMBRE_LOCAL, ln=True, align="C")
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(190, 7, f"Factura de Venta No. {f['id']}", ln=True, align="C")
+    pdf.cell(190, 7, f"Fecha: {f['fecha']}", ln=True, align="C")
+    pdf.ln(10)
+
+    # Datos Cliente
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(190, 7, f"Cliente: {f['cliente_nombre']}", ln=True)
+    pdf.cell(190, 7, f"Documento: {f['cliente_documento']}", ln=True)
+    pdf.ln(5)
+
+    # Tabla de productos
+    pdf.set_fill_color(240, 240, 240)
+    pdf.cell(100, 10, "Producto", 1, 0, "C", True)
+    pdf.cell(40, 10, "Cant.", 1, 0, "C", True)
+    pdf.cell(50, 10, "Total", 1, 1, "C", True)
+
+    pdf.set_font("Arial", "", 11)
+    # Recuperamos los detalles guardados
+    items = f['detalles_json'].split("|")
+    for item in items:
+        nom, cant, tot = item.split(",")
+        pdf.cell(100, 10, nom, 1)
+        pdf.cell(40, 10, cant, 1, 0, "C")
+        pdf.cell(50, 10, f"${float(tot):,.0f}", 1, 1, "R")
+
+    # Totales
+    pdf.ln(5)
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(140, 8, "Subtotal:", 0, 0, "R")
+    pdf.cell(50, 8, f"${f['subtotal']:,.0f}", 0, 1, "R")
+    pdf.cell(140, 8, f"IVA ({VALOR_IVA*100:.0f}%):", 0, 0, "R")
+    pdf.cell(50, 8, f"${f['iva']:,.0f}", 0, 1, "R")
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(140, 12, "TOTAL A PAGAR:", 0, 0, "R")
+    pdf.cell(50, 12, f"${f['total']:,.0f}", 0, 1, "R")
+
+    output = io.BytesIO()
+    pdf_out = pdf.output(dest='S')
+    output.write(pdf_out)
+    output.seek(0)
+    
+    return send_file(output, mimetype='application/pdf', download_name=f"Factura_{id_factura}.pdf")
+
+# (Mantengo tus otras rutas: inv_agregar, car_agregar, car_limpiar, cli_upd igual)
 @app.route("/inventario/agregar", methods=["POST"])
 def inv_agregar():
     p = request.form
@@ -199,27 +291,7 @@ def cli_upd():
     }
     return redirect("/")
 
-@app.route("/venta/finalizar")
-def finalizar():
-    carrito = session.get('carrito', [])
-    if not carrito: return redirect("/")
-    
-    total = sum(item['total'] for item in carrito)
-    sub = total / (1 + VALOR_IVA)
-    iva = total - sub
-    cliente = session.get('cliente')
-    
-    conn = get_db_connection()
-    conn.execute("INSERT INTO facturas (subtotal, iva, total, cliente_nombre, cliente_documento) VALUES (?,?,?,?,?)", 
-                 (sub, iva, total, cliente['nombre'], cliente['documento']))
-    
-    for item in carrito:
-        conn.execute("UPDATE inventario SET stock = stock - ? WHERE producto = ?", (item['cantidad'], item['nombre']))
-    
-    conn.commit()
-    conn.close()
-    session['carrito'] = []
-    return redirect("/")
+from flask import url_for # Asegúrate de importar esto arriba
 
 if __name__ == "__main__":
     app.run(debug=True)
