@@ -1,50 +1,45 @@
-from flask import Flask, render_template_string, request, redirect, url_for
+
+from flask import Flask, render_template_string, request, redirect, session
 import sqlite3
 from datetime import datetime
+import os
 
 app = Flask(__name__)
+# Clave secreta necesaria para usar sesiones (puedes cambiar 'super-secreta')
+app.secret_key = 'pollo_raul_secret_key'
 
 # ==============================
 # CONFIGURACIÓN DEL NEGOCIO
 # ==============================
 NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 VALOR_IVA = 0.19
-carrito_de_compras = []
-cliente_actual = {"nombre": "Consumidor Final", "documento": "222222222222"}
 
 def get_db_connection():
-    conn = sqlite3.connect("pos.db")
+    # En Vercel, /tmp es el único lugar con permisos de escritura para SQLite
+    db_path = os.path.join('/tmp', 'pos.db') if os.environ.get('VERCEL') else 'pos.db'
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Crea y actualiza la base de datos automáticamente"""
     with get_db_connection() as conn:
-        # Tabla Inventario
         conn.execute("""CREATE TABLE IF NOT EXISTS inventario (
             producto TEXT PRIMARY KEY, precio REAL, stock REAL, tipo TEXT,
             fecha_expedicion TEXT, fecha_vencimiento TEXT)""")
         
-        # Tabla Facturas (Historial)
         conn.execute("""CREATE TABLE IF NOT EXISTS facturas (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
             subtotal REAL, iva REAL, total REAL, 
             fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             cliente_nombre TEXT, 
             cliente_documento TEXT)""")
-        
-        # REPARACIÓN: Si la tabla ya existía pero le faltaban columnas de cliente
-        try:
-            conn.execute("ALTER TABLE facturas ADD COLUMN cliente_nombre TEXT")
-        except sqlite3.OperationalError: pass
-        try:
-            conn.execute("ALTER TABLE facturas ADD COLUMN cliente_documento TEXT")
-        except sqlite3.OperationalError: pass
-        
         conn.commit()
 
+# Inicializamos la base de datos al arrancar
+init_db()
+
 # ==============================
-# INTERFAZ PROFESIONAL (HTML/CSS)
+# INTERFAZ (HTML/CSS) - Igual a la tuya con ajustes de sesión
 # ==============================
 HTML_SISTEMA = """
 <!DOCTYPE html>
@@ -60,99 +55,84 @@ HTML_SISTEMA = """
         h1, h2 { color: #2c3e50; margin-top: 0; border-bottom: 2px solid #3498db; padding-bottom: 8px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; }
-        th { background: #f8f9fa; color: #7f8c8d; }
-        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; font-size: 14px; }
-        button { background: #3498db; color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #2980b9; transform: translateY(-1px); }
+        input, select, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
+        button { background: #3498db; color: white; border: none; font-weight: bold; cursor: pointer; }
         .btn-success { background: #2ecc71; }
-        .btn-success:hover { background: #27ae60; }
         .total-display { font-size: 24px; font-weight: bold; color: #27ae60; margin: 15px 0; border: 2px dashed #2ecc71; padding: 10px; text-align: center; }
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #e8f4fd; color: #3498db; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; background: #e8f4fd; color: #3498db; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="card full-width">
-            <h1 style="border:none; margin:0; text-align:center;">🍗 {{ nombre }} - Punto de Venta</h1>
+            <h1 style="text-align:center;">🍗 {{ nombre }} - Punto de Venta</h1>
         </div>
 
         <div class="card">
             <h2>📦 Gestión de Inventario</h2>
             <form action="/inventario/agregar" method="POST">
-                <input type="text" name="producto" placeholder="Nombre del Producto (ej: Muslos)" required>
+                <input type="text" name="producto" placeholder="Producto" required>
                 <div style="display:flex; gap:10px;">
-                    <input type="number" step="0.01" name="precio" placeholder="Precio de Venta" required>
-                    <input type="number" step="0.01" name="stock" placeholder="Cantidad / Peso" required>
+                    <input type="number" step="0.01" name="precio" placeholder="Precio" required>
+                    <input type="number" step="0.01" name="stock" placeholder="Cantidad" required>
                 </div>
                 <select name="tipo">
                     <option value="Kg">Kilogramos (Kg)</option>
                     <option value="Und">Unidades (Und)</option>
                 </select>
-                <label style="font-size:12px; color:#666;">Fecha de Vencimiento:</label>
                 <input type="date" name="vencimiento" required>
-                <button type="submit" class="btn-success">Guardar en Inventario</button>
+                <button type="submit" class="btn-success">Guardar</button>
             </form>
-            <div style="max-height: 300px; overflow-y: auto;">
-                <table>
-                    <thead><tr><th>Producto</th><th>Precio</th><th>Stock</th></tr></thead>
-                    <tbody>
-                        {% for p in inventario %}
-                        <tr>
-                            <td>{{ p.producto }}</td>
-                            <td>${{ "{:,.0f}".format(p.precio) }}</td>
-                            <td><span class="badge">{{ p.stock }} {{ p.tipo }}</span></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <table>
+                {% for p in inventario %}
+                <tr>
+                    <td>{{ p.producto }}</td>
+                    <td>${{ "{:,.0f}".format(p.precio) }}</td>
+                    <td><span class="badge">{{ p.stock }} {{ p.tipo }}</span></td>
+                </tr>
+                {% endfor %}
+            </table>
         </div>
 
         <div class="card">
             <h2>🛒 Nueva Venta</h2>
             <form action="/carrito/agregar" method="POST">
-                <input type="text" list="prods" name="producto" placeholder="Escriba para buscar producto..." required>
+                <input type="text" list="prods" name="producto" placeholder="Buscar producto..." required>
                 <datalist id="prods">
                     {% for p in inventario %}<option value="{{ p.producto }}">{% endfor %}
                 </datalist>
-                <input type="number" step="0.01" name="cantidad" placeholder="Cantidad / Peso a vender" required>
-                <button type="submit">Agregar al Carrito</button>
+                <input type="number" step="0.01" name="cantidad" placeholder="Cantidad" required>
+                <button type="submit">Agregar</button>
             </form>
             <hr>
             <h3>👤 Cliente: {{ cliente.nombre }}</h3>
             <form action="/cliente/actualizar" method="POST">
                 <div style="display:flex; gap:10px;">
                     <input type="text" name="nombre" placeholder="Nombre">
-                    <input type="text" name="documento" placeholder="Cédula / NIT">
+                    <input type="text" name="documento" placeholder="Cédula">
                 </div>
-                <button type="submit" style="background:#95a5a6">Vincular Cliente</button>
+                <button type="submit" style="background:#95a5a6">Actualizar Cliente</button>
             </form>
-            <hr>
             <div class="total-display">TOTAL: ${{ "{:,.0f}".format(total_venta) }}</div>
             {% if carrito %}
-            <div style="max-height: 150px; overflow-y: auto; margin-bottom: 10px; font-size: 13px;">
                 {% for item in carrito %}
                 <p>✅ {{ item.cantidad }} x {{ item.nombre }} = ${{ "{:,.0f}".format(item.total) }}</p>
                 {% endfor %}
-            </div>
-            <a href="/venta/finalizar"><button class="btn-success">✅ FINALIZAR Y GUARDAR FACTURA</button></a>
+                <a href="/venta/finalizar"><button class="btn-success">FINALIZAR VENTA</button></a>
+                <a href="/carrito/limpiar"><button style="background:#e74c3c; margin-top:5px;">VACIAR CARRITO</button></a>
             {% endif %}
         </div>
 
         <div class="card full-width">
-            <h2>📊 Historial de Facturas Recientes</h2>
+            <h2>📊 Historial Reciente</h2>
             <table>
-                <thead>
-                    <tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Subtotal</th><th>IVA (19%)</th><th>Total</th></tr>
-                </thead>
+                <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th></tr></thead>
                 <tbody>
                     {% for f in historial %}
                     <tr>
                         <td>#{{ f.id }}</td>
                         <td>{{ f.fecha[:16] }}</td>
                         <td>{{ f.cliente_nombre }}</td>
-                        <td>${{ "{:,.0f}".format(f.subtotal) }}</td>
-                        <td>${{ "{:,.0f}".format(f.iva) }}</td>
                         <td><strong>${{ "{:,.0f}".format(f.total) }}</strong></td>
                     </tr>
                     {% endfor %}
@@ -165,18 +145,22 @@ HTML_SISTEMA = """
 """
 
 # ==============================
-# LÓGICA DE CONTROL (RUTAS)
+# RUTAS
 # ==============================
 @app.route("/")
 def index():
+    if 'carrito' not in session: session['carrito'] = []
+    if 'cliente' not in session: session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
+    
     conn = get_db_connection()
     inv = conn.execute("SELECT * FROM inventario ORDER BY producto ASC").fetchall()
-    his = conn.execute("SELECT * FROM facturas ORDER BY fecha DESC LIMIT 15").fetchall()
+    his = conn.execute("SELECT * FROM facturas ORDER BY fecha DESC LIMIT 10").fetchall()
     conn.close()
-    total = sum(item['total'] for item in carrito_de_compras)
+    
+    total = sum(item['total'] for item in session['carrito'])
     return render_template_string(HTML_SISTEMA, nombre=NOMBRE_LOCAL, inventario=inv, 
-                                 carrito=carrito_de_compras, total_venta=total, 
-                                 cliente=cliente_actual, historial=his)
+                                 carrito=session['carrito'], total_venta=total, 
+                                 cliente=session['cliente'], historial=his)
 
 @app.route("/inventario/agregar", methods=["POST"])
 def inv_agregar():
@@ -197,39 +181,45 @@ def car_agregar():
     p = conn.execute("SELECT precio FROM inventario WHERE producto=?", (nombre,)).fetchone()
     conn.close()
     if p:
-        carrito_de_compras.append({"nombre": nombre, "cantidad": cant, "total": p['precio'] * cant})
+        carrito = session.get('carrito', [])
+        carrito.append({"nombre": nombre, "cantidad": cant, "total": p['precio'] * cant})
+        session['carrito'] = carrito
+    return redirect("/")
+
+@app.route("/carrito/limpiar")
+def car_limpiar():
+    session['carrito'] = []
     return redirect("/")
 
 @app.route("/cliente/actualizar", methods=["POST"])
 def cli_upd():
-    cliente_actual['nombre'] = request.form.get("nombre") or "Consumidor Final"
-    cliente_actual['documento'] = request.form.get("documento") or "222222222222"
+    session['cliente'] = {
+        "nombre": request.form.get("nombre") or "Consumidor Final",
+        "documento": request.form.get("documento") or "222222222222"
+    }
     return redirect("/")
 
 @app.route("/venta/finalizar")
 def finalizar():
-    if not carrito_de_compras: return redirect("/")
+    carrito = session.get('carrito', [])
+    if not carrito: return redirect("/")
     
-    total = sum(item['total'] for item in carrito_de_compras)
+    total = sum(item['total'] for item in carrito)
     sub = total / (1 + VALOR_IVA)
     iva = total - sub
+    cliente = session.get('cliente')
     
     conn = get_db_connection()
-    # Guardar Factura
-    conn.execute("""INSERT INTO facturas (subtotal, iva, total, cliente_nombre, cliente_documento) 
-                 VALUES (?,?,?,?,?)""", 
-                 (sub, iva, total, cliente_actual['nombre'], cliente_actual['documento']))
+    conn.execute("INSERT INTO facturas (subtotal, iva, total, cliente_nombre, cliente_documento) VALUES (?,?,?,?,?)", 
+                 (sub, iva, total, cliente['nombre'], cliente['documento']))
     
-    # Descontar del Inventario
-    for item in carrito_de_compras:
-        conn.execute("UPDATE inventario SET stock = stock - ? WHERE producto = ?", 
-                    (item['cantidad'], item['nombre']))
+    for item in carrito:
+        conn.execute("UPDATE inventario SET stock = stock - ? WHERE producto = ?", (item['cantidad'], item['nombre']))
     
     conn.commit()
     conn.close()
-    carrito_de_compras.clear()
+    session['carrito'] = []
     return redirect("/")
 
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True)
