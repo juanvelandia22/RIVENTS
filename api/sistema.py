@@ -180,11 +180,7 @@ def index():
                                    inventario=inv, carrito=session['carrito'], total_venta=total, 
                                    cliente=session['cliente'], historial=his, busqueda=buscar)
 
-@app.route("/inventario/guardar", methods=["POST"])
-def inv_guardar():
-    c = request.form
-    conn = get_db_connection()
-  # Ahora enviamos los 7 valores que la tabla necesita
+
 @app.route("/inventario/guardar", methods=["POST"])
 def inv_guardar():
     c = request.form
