@@ -1,5 +1,5 @@
 
-from flask import Flask, render_template_string, request, redirect, session, send_file
+from flask import Flask, render_template_string, request, redirect, session, send_file, url_for
 import sqlite3
 from datetime import datetime
 import os
@@ -16,7 +16,18 @@ NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 VALOR_IVA = 0.19
 
 def get_db_connection():
-    db_path = os.path.join('/tmp', 'pos.db') if os.environ.get('VERCEL') else 'pos.db'
+    # Ruta normal cuando trabajas en tu computador
+    db_path = "pos.db"
+
+    # Si está corriendo en Vercel usa carpeta temporal
+    if os.environ.get("VERCEL"):
+        db_path = "/tmp/pos.db"
+
+        # si la base no existe en /tmp la copiamos
+        if not os.path.exists(db_path) and os.path.exists("pos.db"):
+            import shutil
+            shutil.copy("pos.db", db_path)
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
@@ -291,10 +302,8 @@ def cli_upd():
     }
     return redirect("/")
 
-from flask import url_for # Asegúrate de importar esto arriba
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
 
-    def handler(request, response):
-    return app(request.environ, response.start_response)
+def handler(request, context):
+    return app(request.environ, context.start_response)
