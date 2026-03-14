@@ -23,9 +23,8 @@ def get_db_connection():
 
 def init_db():
     with get_db_connection() as conn:
-        # Se asegura de que la tabla tenga las 7 columnas exactas
-        conn.execute("DROP TABLE IF EXISTS inventario")
-        conn.execute("""CREATE TABLE inventario (
+        # Se eliminó DROP TABLE para no borrar tus productos cada vez que inicias
+        conn.execute("""CREATE TABLE IF NOT EXISTS inventario (
             codigo INTEGER PRIMARY KEY, 
             producto TEXT, 
             precio REAL, 
@@ -45,6 +44,7 @@ def init_db():
 
 init_db()
 
+# --- (El bloque HTML_SISTEMA se mantiene igual que el tuyo) ---
 HTML_SISTEMA = """
 <!DOCTYPE html>
 <html lang="es">
@@ -185,12 +185,13 @@ def index():
 def inv_guardar():
     c = request.form
     conn = get_db_connection()
-    # Ahora enviamos los 7 valores alineados correctamente
+    # Enviamos los 7 valores correctos
     conn.execute("INSERT OR REPLACE INTO inventario VALUES (?,?,?,?,?,?,?)",
-                 (c['codigo'], c['producto'].upper(), c['precio'], c['stock'], c['tipo'], datetime.now().strftime('%Y-%m-%d'), ""))
+                  (c['codigo'], c['producto'].upper(), c['precio'], c['stock'], c['tipo'], datetime.now().strftime('%Y-%m-%d'), ""))
     conn.commit()
     conn.close()
     return redirect("/")
+
 @app.route("/inventario/eliminar/<int:codigo>")
 def inv_eliminar(codigo):
     conn = get_db_connection()
@@ -211,6 +212,7 @@ def car_agregar():
     conn.close()
     if p and p['stock'] >= cant:
         carrito = session.get('carrito', [])
+        # USAMOS 'codigo' PARA EVITAR EL KEYERROR
         carrito.append({"codigo": cod, "nombre": p['producto'], "cantidad": cant, "total": p['precio'] * cant, "tipo": p['tipo']})
         session['carrito'] = carrito
     return redirect("/")
@@ -232,9 +234,10 @@ def finalizar():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("INSERT INTO facturas (subtotal, iva, total, cliente_nombre, cliente_documento, detalles_json) VALUES (?,?,?,?,?,?)", 
-                   (sub, iva, total, cliente['nombre'], cliente['documento'], detalles))
+                    (sub, iva, total, cliente['nombre'], cliente['documento'], detalles))
     factura_id = cursor.lastrowid
     for item in carrito:
+        # AQUÍ BUSCAMOS 'codigo' QUE YA EXISTE EN EL CARRITO
         conn.execute("UPDATE inventario SET stock = stock - ? WHERE codigo = ?", (item['cantidad'], item['codigo']))
     conn.commit()
     conn.close()
@@ -247,7 +250,6 @@ def generar_pdf(id_factura):
     f = conn.execute("SELECT * FROM facturas WHERE id = ?", (id_factura,)).fetchone()
     conn.close()
     
-    # Formato tirilla 80mm
     pdf = FPDF(unit='mm', format=(80, 200))
     pdf.add_page()
     pdf.set_margins(5, 5, 5)
