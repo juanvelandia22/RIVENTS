@@ -14,9 +14,13 @@ NIT_NEGOCIO = "123.456.789-0"
 DIRECCION = "Cúcuta, Norte de Santander"
 TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
+import os
 
+# CambiA tu función get_db_connection para que sea así:
 def get_db_connection():
-    db_path = "pos.db"
+    # Esto busca el archivo en la carpeta raíz, un nivel arriba de 'api'
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base_dir, "..", "pos.db")
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
