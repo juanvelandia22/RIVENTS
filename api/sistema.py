@@ -295,3 +295,6 @@ from flask import url_for # Asegúrate de importar esto arriba
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+    def handler(request, response):
+    return app(request.environ, response.start_response)
