@@ -151,7 +151,7 @@ HTML_SISTEMA = """
                         <td>{{ f.cliente_nombre }}</td>
                         <td>{{ f.cliente_documento }}</td>
                         <td><b>${{ "{:,.0f}".format(f.total) }}</b></td>
-                        <td><a href="/factura/pdf/{{ f.id }}" target="_blank">📄 Imprimir PDF</a></td>
+                        <td><a href="/factura/pdf/{{ f.id }}" target="_blank">🖨️ Descargar / Imprimir</a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -200,17 +200,35 @@ def inv_eliminar(codigo):
 @app.route("/carrito/agregar", methods=["POST"])
 def car_agregar():
     cod = request.form.get("codigo_vta")
+
     try:
         cant = float(request.form.get("cantidad", 0))
+        if cant <= 0:
+            return redirect("/")
     except:
-        cant = 0
+        return redirect("/")
+
     conn = get_db_connection()
     p = conn.execute("SELECT producto, precio, stock, tipo FROM inventario WHERE codigo=?", (cod,)).fetchone()
     conn.close()
-    if p and p['stock'] >= cant:
-        carrito = session.get('carrito', [])
-        carrito.append({"codigo": cod, "nombre": p['producto'], "cantidad": cant, "total": p['precio'] * cant, "tipo": p['tipo']})
-        session['carrito'] = carrito
+
+    if not p:
+        return redirect("/")
+
+    if p['stock'] < cant:
+        return redirect("/")
+
+    carrito = session.get('carrito', [])
+
+    carrito.append({
+        "codigo": cod,
+        "nombre": p['producto'],
+        "cantidad": cant,
+        "total": round(p['precio'] * cant, 2),
+        "tipo": p['tipo']
+    })
+
+    session['carrito'] = carrito
     return redirect("/")
 
 @app.route("/cliente/actualizar", methods=["POST"])
@@ -244,49 +262,92 @@ def generar_pdf(id_factura):
     conn = get_db_connection()
     f = conn.execute("SELECT * FROM facturas WHERE id = ?", (id_factura,)).fetchone()
     conn.close()
-    
+
+    if not f:
+        return "Factura no encontrada", 404
+
     pdf = FPDF(unit='mm', format=(80, 200))
     pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=5)
     pdf.set_margins(5, 5, 5)
+
+    # ENCABEZADO
     pdf.set_font("Arial", "B", 12)
     pdf.multi_cell(70, 6, NOMBRE_LOCAL, 0, "C")
+
     pdf.set_font("Arial", "", 8)
     pdf.cell(70, 4, f"NIT: {NIT_NEGOCIO}", ln=True, align="C")
     pdf.multi_cell(70, 4, DIRECCION, 0, "C")
     pdf.cell(70, 4, f"Tel: {TELEFONO}", ln=True, align="C")
+
+    pdf.ln(2)
     pdf.cell(70, 2, "-"*40, ln=True, align="C")
+
+    # INFO FACTURA
     pdf.set_font("Arial", "B", 9)
     pdf.cell(70, 5, f"FACTURA No. {f['id']}", ln=True, align="C")
+
     pdf.set_font("Arial", "", 8)
     pdf.cell(70, 4, f"Fecha: {f['fecha'][:16]}", ln=True)
-    pdf.multi_cell(70, 4, f"Cliente: {f['cliente_nombre']}", 0, "L")
+    pdf.multi_cell(70, 4, f"Cliente: {f['cliente_nombre']}")
     pdf.cell(70, 4, f"CC/NIT: {f['cliente_documento']}", ln=True)
+
     pdf.cell(70, 2, "-"*40, ln=True, align="C")
-    
+
+    # TABLA
     pdf.set_font("Arial", "B", 8)
-    pdf.cell(35, 5, "Prod", 0); pdf.cell(10, 5, "Cant", 0, 0, "C"); pdf.cell(25, 5, "Total", 0, 1, "R")
+    pdf.cell(35, 5, "Producto")
+    pdf.cell(10, 5, "Cant", 0, 0, "C")
+    pdf.cell(25, 5, "Total", 0, 1, "R")
+
     pdf.set_font("Arial", "", 8)
-    items = f['detalles_json'].split("|")
-    for item in items:
-        nom, cant, tot = item.split(",")
-        pdf.cell(35, 4, nom[:18]); pdf.cell(10, 4, cant, 0, 0, "C"); pdf.cell(25, 4, f"${float(tot):,.0f}", 0, 1, "R")
-    
+
+    if f['detalles_json']:
+        items = f['detalles_json'].split("|")
+        for item in items:
+            try:
+                nom, cant, tot = item.split(",")
+
+                # Ajuste nombre largo
+                if len(nom) > 18:
+                    nom = nom[:18] + "..."
+
+                pdf.cell(35, 4, nom)
+                pdf.cell(10, 4, f"{float(cant):.2f}", 0, 0, "C")
+                pdf.cell(25, 4, f"${float(tot):,.0f}", 0, 1, "R")
+
+            except:
+                continue
+
     pdf.cell(70, 2, "-"*40, ln=True, align="C")
-    pdf.cell(40, 5, "SUBTOTAL:", 0, 0, "R"); pdf.cell(30, 5, f"${f['subtotal']:,.0f}", 0, 1, "R")
-    pdf.cell(40, 5, "IVA (19%):", 0, 0, "R"); pdf.cell(30, 5, f"${f['iva']:,.0f}", 0, 1, "R")
+
+    # TOTALES
+    pdf.cell(40, 5, "SUBTOTAL:", 0, 0, "R")
+    pdf.cell(30, 5, f"${f['subtotal']:,.0f}", 0, 1, "R")
+
+    pdf.cell(40, 5, f"IVA ({int(VALOR_IVA*100)}%):", 0, 0, "R")
+    pdf.cell(30, 5, f"${f['iva']:,.0f}", 0, 1, "R")
+
     pdf.set_font("Arial", "B", 10)
-    pdf.cell(40, 8, "TOTAL:", 0, 0, "R"); pdf.cell(30, 8, f"${f['total']:,.0f}", 0, 1, "R")
-    
+    pdf.cell(40, 8, "TOTAL:", 0, 0, "R")
+    pdf.cell(30, 8, f"${f['total']:,.0f}", 0, 1, "R")
+
     pdf.ln(5)
     pdf.set_font("Arial", "I", 7)
     pdf.multi_cell(70, 4, "Gracias por su compra. Vuelva pronto!", 0, "C")
 
+    # GENERAR ARCHIVO
     output = io.BytesIO()
     pdf_out = pdf.output(dest='S').encode('latin1')
     output.write(pdf_out)
     output.seek(0)
-    return send_file(output, mimetype='application/pdf', download_name=f"Factura_{id_factura}.pdf")
 
+    return send_file(
+        output,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f"Factura_{id_factura}.pdf"
+    )
 @app.route("/carrito/limpiar")
 def car_limpiar():
     session['carrito'] = []
