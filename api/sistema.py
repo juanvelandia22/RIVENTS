@@ -1,5 +1,5 @@
 from flask import Flask, render_template_string, request, redirect, session, send_file, url_for
-import sqlite3
+from supabase import create_client, Client
 from datetime import datetime
 import os
 from fpdf import FPDF
@@ -15,34 +15,12 @@ DIRECCION = "Cúcuta, Norte de Santander"
 TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
 
-def get_db_connection():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = os.path.join(base_dir, "..", "pos.db")
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+# === CONEXIÓN A SUPABASE ===
+# Reemplaza con tus datos reales de la captura image_654f4b.png
+URL_SUPABASE = "https://paulpnqsfytnpbbitquo.supabase.co"
+KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig" 
 
-def init_db():
-    with get_db_connection() as conn:
-        conn.execute("""CREATE TABLE IF NOT EXISTS inventario (
-            codigo INTEGER PRIMARY KEY, 
-            producto TEXT, 
-            precio REAL, 
-            stock REAL, 
-            tipo TEXT, 
-            fecha_registro TEXT,
-            fecha_vencimiento TEXT)""")
-        
-        conn.execute("""CREATE TABLE IF NOT EXISTS facturas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            subtotal REAL, iva REAL, total REAL, 
-            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP, 
-            cliente_nombre TEXT, 
-            cliente_documento TEXT, 
-            detalles_json TEXT)""")
-        conn.commit()
-
-init_db()
+supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
 HTML_SISTEMA = """
 <!DOCTYPE html>
@@ -167,13 +145,21 @@ def index():
     if 'carrito' not in session: session['carrito'] = []
     if 'cliente' not in session: session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
     buscar = request.args.get('buscar', '')
-    conn = get_db_connection()
-    inv = conn.execute("SELECT * FROM inventario ORDER BY codigo ASC").fetchall()
+    
+    # Traer inventario ordenado
+    inv_res = supabase.table("inventario").select("*").order("codigo").execute()
+    inv = inv_res.data if inv_res.data else []
+    
+    # Buscador en historial
     if buscar:
-        his = conn.execute("SELECT * FROM facturas WHERE cliente_documento LIKE ? OR cliente_nombre LIKE ? ORDER BY fecha DESC", ('%'+buscar+'%', '%'+buscar+'%')).fetchall()
+        his_res = supabase.table("facturas").select("*")\
+            .or_(f"cliente_documento.ilike.%{buscar}%,cliente_nombre.ilike.%{buscar}%")\
+            .order("fecha", desc=True).execute()
     else:
-        his = conn.execute("SELECT * FROM facturas ORDER BY fecha DESC LIMIT 10").fetchall()
-    conn.close()
+        his_res = supabase.table("facturas").select("*").order("fecha", desc=True).limit(10).execute()
+    
+    his = his_res.data if his_res.data else []
+        
     total = sum(item['total'] for item in session['carrito'])
     return render_template_string(HTML_SISTEMA, nombre=NOMBRE_LOCAL, nit=NIT_NEGOCIO, direccion=DIRECCION, 
                                    inventario=inv, carrito=session['carrito'], total_venta=total, 
@@ -183,54 +169,46 @@ def index():
 def inv_guardar():
     try:
         c = request.form
-        conn = get_db_connection()
-        conn.execute("INSERT OR REPLACE INTO inventario VALUES (?,?,?,?,?,?,?)",
-                      (c['codigo'], c['producto'].upper(), c['precio'], c['stock'], c['tipo'], datetime.now().strftime('%Y-%m-%d'), ""))
-        conn.commit()
-        conn.close()
+        datos = {
+            "codigo": int(c['codigo']),
+            "producto": c['producto'].upper(),
+            "precio": float(c['precio']),
+            "stock": float(c['stock']),
+            "tipo": c['tipo'],
+            "fecha_registro": datetime.now().strftime('%Y-%m-%d')
+        }
+        supabase.table("inventario").upsert(datos).execute()
         return redirect("/")
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error al guardar: {str(e)}"
 
 @app.route("/inventario/eliminar/<int:codigo>")
 def inv_eliminar(codigo):
-    conn = get_db_connection()
-    conn.execute("DELETE FROM inventario WHERE codigo = ?", (codigo,))
-    conn.commit()
-    conn.close()
+    supabase.table("inventario").delete().eq("codigo", codigo).execute()
     return redirect("/")
 
 @app.route("/carrito/agregar", methods=["POST"])
 def car_agregar():
     cod = request.form.get("codigo_vta")
-
     try:
         cant = float(request.form.get("cantidad", 0))
-        if cant <= 0:
-            return redirect("/")
-    except:
-        return redirect("/")
+        if cant <= 0: return redirect("/")
+    except: return redirect("/")
 
-    conn = get_db_connection()
-    p = conn.execute("SELECT producto, precio, stock, tipo FROM inventario WHERE codigo=?", (cod,)).fetchone()
-    conn.close()
+    res = supabase.table("inventario").select("*").eq("codigo", cod).execute()
+    p = res.data[0] if res.data else None
 
-    if not p:
-        return redirect("/")
-
-    if p['stock'] < cant:
+    if not p or float(p['stock']) < cant:
         return redirect("/")
 
     carrito = session.get('carrito', [])
-
     carrito.append({
         "codigo": cod,
         "nombre": p['producto'],
         "cantidad": cant,
-        "total": round(p['precio'] * cant, 2),
+        "total": round(float(p['precio']) * cant, 2),
         "tipo": p['tipo']
     })
-
     session['carrito'] = carrito
     return redirect("/")
 
@@ -243,66 +221,66 @@ def cli_upd():
 def finalizar():
     carrito = session.get('carrito', [])
     if not carrito: return redirect("/")
+    
     total = sum(item['total'] for item in carrito)
     sub = total / (1 + VALOR_IVA)
     iva = total - sub
     cliente = session.get('cliente')
     detalles = "|".join([f"{i['nombre']},{i['cantidad']},{i['total']}" for i in carrito])
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO facturas (subtotal, iva, total, cliente_nombre, cliente_documento, detalles_json) VALUES (?,?,?,?,?,?)", 
-                    (sub, iva, total, cliente['nombre'], cliente['documento'], detalles))
-    factura_id = cursor.lastrowid
+    
+    factura_data = {
+        "subtotal": float(sub), "iva": float(iva), "total": float(total),
+        "cliente_nombre": cliente['nombre'], 
+        "cliente_documento": cliente['documento'], 
+        "detalles_json": detalles
+    }
+    
+    # Guardar factura y obtener el ID generado
+    res = supabase.table("facturas").insert(factura_data).execute()
+    factura_id = res.data[0]['id']
+    
+    # Descontar stock
     for item in carrito:
-        conn.execute("UPDATE inventario SET stock = stock - ? WHERE codigo = ?", (item['cantidad'], item['codigo']))
-    conn.commit()
-    conn.close()
+        prod_res = supabase.table("inventario").select("stock").eq("codigo", item['codigo']).single().execute()
+        nuevo_stock = float(prod_res.data['stock']) - float(item['cantidad'])
+        supabase.table("inventario").update({"stock": nuevo_stock}).eq("codigo", item['codigo']).execute()
+        
     session['carrito'] = []
     return redirect(url_for('generar_pdf', id_factura=factura_id))
 
 @app.route("/factura/pdf/<int:id_factura>")
 def generar_pdf(id_factura):
-    conn = get_db_connection()
-    f = conn.execute("SELECT * FROM facturas WHERE id = ?", (id_factura,)).fetchone()
-    conn.close()
+    res = supabase.table("facturas").select("*").eq("id", id_factura).execute()
+    f = res.data[0] if res.data else None
 
-    if not f:
-        return "Factura no encontrada", 404
+    if not f: return "Factura no encontrada", 404
 
     pdf = FPDF(unit='mm', format=(80, 200))
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=5)
     pdf.set_margins(5, 5, 5)
 
-    # ENCABEZADO
     pdf.set_font("Arial", "B", 12)
     pdf.multi_cell(70, 6, NOMBRE_LOCAL, 0, "C")
-
     pdf.set_font("Arial", "", 8)
     pdf.cell(70, 4, f"NIT: {NIT_NEGOCIO}", ln=True, align="C")
     pdf.multi_cell(70, 4, DIRECCION, 0, "C")
     pdf.cell(70, 4, f"Tel: {TELEFONO}", ln=True, align="C")
-
     pdf.ln(2)
     pdf.cell(70, 2, "-"*40, ln=True, align="C")
-
-    # INFO FACTURA
+    
     pdf.set_font("Arial", "B", 9)
     pdf.cell(70, 5, f"FACTURA No. {f['id']}", ln=True, align="C")
-
     pdf.set_font("Arial", "", 8)
     pdf.cell(70, 4, f"Fecha: {f['fecha'][:16]}", ln=True)
     pdf.multi_cell(70, 4, f"Cliente: {f['cliente_nombre']}")
     pdf.cell(70, 4, f"CC/NIT: {f['cliente_documento']}", ln=True)
-
     pdf.cell(70, 2, "-"*40, ln=True, align="C")
 
-    # TABLA
     pdf.set_font("Arial", "B", 8)
     pdf.cell(35, 5, "Producto")
     pdf.cell(10, 5, "Cant", 0, 0, "C")
     pdf.cell(25, 5, "Total", 0, 1, "R")
-
     pdf.set_font("Arial", "", 8)
 
     if f['detalles_json']:
@@ -310,47 +288,31 @@ def generar_pdf(id_factura):
         for item in items:
             try:
                 nom, cant, tot = item.split(",")
-
-                # Ajuste nombre largo
-                if len(nom) > 18:
-                    nom = nom[:18] + "..."
-
+                if len(nom) > 18: nom = nom[:18] + "..."
                 pdf.cell(35, 4, nom)
                 pdf.cell(10, 4, f"{float(cant):.2f}", 0, 0, "C")
                 pdf.cell(25, 4, f"${float(tot):,.0f}", 0, 1, "R")
-
-            except:
-                continue
+            except: continue
 
     pdf.cell(70, 2, "-"*40, ln=True, align="C")
-
-    # TOTALES
     pdf.cell(40, 5, "SUBTOTAL:", 0, 0, "R")
-    pdf.cell(30, 5, f"${f['subtotal']:,.0f}", 0, 1, "R")
-
+    pdf.cell(30, 5, f"${float(f['subtotal']):,.0f}", 0, 1, "R")
     pdf.cell(40, 5, f"IVA ({int(VALOR_IVA*100)}%):", 0, 0, "R")
-    pdf.cell(30, 5, f"${f['iva']:,.0f}", 0, 1, "R")
-
+    pdf.cell(30, 5, f"${float(f['iva']):,.0f}", 0, 1, "R")
     pdf.set_font("Arial", "B", 10)
     pdf.cell(40, 8, "TOTAL:", 0, 0, "R")
-    pdf.cell(30, 8, f"${f['total']:,.0f}", 0, 1, "R")
-
+    pdf.cell(30, 8, f"${float(f['total']):,.0f}", 0, 1, "R")
     pdf.ln(5)
     pdf.set_font("Arial", "I", 7)
     pdf.multi_cell(70, 4, "Gracias por su compra. Vuelva pronto!", 0, "C")
 
-    # GENERAR ARCHIVO
     output = io.BytesIO()
     pdf_out = pdf.output(dest='S').encode('latin1')
     output.write(pdf_out)
     output.seek(0)
 
-    return send_file(
-        output,
-        mimetype='application/pdf',
-        as_attachment=True,
-        download_name=f"Factura_{id_factura}.pdf"
-    )
+    return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=f"Factura_{id_factura}.pdf")
+
 @app.route("/carrito/limpiar")
 def car_limpiar():
     session['carrito'] = []
