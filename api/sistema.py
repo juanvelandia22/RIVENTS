@@ -181,13 +181,16 @@ def index():
 
 @app.route("/inventario/guardar", methods=["POST"])
 def inv_guardar():
-    c = request.form
-    conn = get_db_connection()
-    conn.execute("INSERT OR REPLACE INTO inventario VALUES (?,?,?,?,?,?,?)",
-                  (c['codigo'], c['producto'].upper(), c['precio'], c['stock'], c['tipo'], datetime.now().strftime('%Y-%m-%d'), ""))
-    conn.commit()
-    conn.close()
-    return redirect("/")
+    try:
+        c = request.form
+        conn = get_db_connection()
+        conn.execute("INSERT OR REPLACE INTO inventario VALUES (?,?,?,?,?,?,?)",
+                      (c['codigo'], c['producto'].upper(), c['precio'], c['stock'], c['tipo'], datetime.now().strftime('%Y-%m-%d'), ""))
+        conn.commit()
+        conn.close()
+        return redirect("/")
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 @app.route("/inventario/eliminar/<int:codigo>")
 def inv_eliminar(codigo):
