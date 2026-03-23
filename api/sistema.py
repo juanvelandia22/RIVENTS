@@ -15,11 +15,9 @@ DIRECCION = "Cúcuta, Norte de Santander"
 TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
 
-# === CONEXIÓN A SUPABASE ===
-# Reemplaza con tus datos reales de la captura image_654f4b.png
-URL_SUPABASE = "https://paulpnqsfytnpbbitquo.supabase.co"
-KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig" 
-
+# === CONEXIÓN A SUPABASE ===# Ahora Python leerá las llaves que acabas de guardar en Vercel
+url = os.environ.get("SUPABASE_URL")
+key = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
 HTML_SISTEMA = """
