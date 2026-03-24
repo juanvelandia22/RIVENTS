@@ -318,3 +318,8 @@ def car_limpiar():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+
+    # Esto ayuda a Vercel a encontrar la aplicación
+app = app 
