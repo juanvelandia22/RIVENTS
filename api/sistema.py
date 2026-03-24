@@ -16,8 +16,8 @@ TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
 
 # === CONEXIÓN A SUPABASE ===# Ahora Python leerá las llaves que acabas de guardar en Vercel
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_KEY")
+URL_SUPABASE = os.environ.get("SUPABASE_URL")
+KEY_SUPABASE = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
 HTML_SISTEMA = """
