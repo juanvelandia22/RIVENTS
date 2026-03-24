@@ -15,10 +15,15 @@ DIRECCION = "Cúcuta, Norte de Santander"
 TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
 
-# === CONEXIÓN A SUPABASE ===# Ahora Python leerá las llaves que acabas de guardar en Vercel
+# === CONEXIÓN A SUPABASE ===
 URL_SUPABASE = os.environ.get("SUPABASE_URL")
 KEY_SUPABASE = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
+
+# Verificación de seguridad para evitar errores si no hay llaves
+if not URL_SUPABASE or not KEY_SUPABASE:
+    supabase = None
+else:
+    supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
 HTML_SISTEMA = """
 <!DOCTYPE html>
@@ -127,7 +132,7 @@ HTML_SISTEMA = """
                         <td>{{ f.cliente_nombre }}</td>
                         <td>{{ f.cliente_documento }}</td>
                         <td><b>${{ "{:,.0f}".format(f.total) }}</b></td>
-                        <td><a href="/factura/pdf/{{ f.id }}" target="_blank">🖨️ Descargar / Imprimir</a></td>
+                        <td><a href="/factura/pdf/{{ f.id }}" target="_blank">🖨️ Descargar</a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -140,15 +145,14 @@ HTML_SISTEMA = """
 
 @app.route("/")
 def index():
+    if not supabase: return "Faltan variables de entorno en Vercel (URL/KEY)"
     if 'carrito' not in session: session['carrito'] = []
     if 'cliente' not in session: session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
     buscar = request.args.get('buscar', '')
     
-    # Traer inventario ordenado
     inv_res = supabase.table("inventario").select("*").order("codigo").execute()
     inv = inv_res.data if inv_res.data else []
     
-    # Buscador en historial
     if buscar:
         his_res = supabase.table("facturas").select("*")\
             .or_(f"cliente_documento.ilike.%{buscar}%,cliente_nombre.ilike.%{buscar}%")\
@@ -157,7 +161,6 @@ def index():
         his_res = supabase.table("facturas").select("*").order("fecha", desc=True).limit(10).execute()
     
     his = his_res.data if his_res.data else []
-        
     total = sum(item['total'] for item in session['carrito'])
     return render_template_string(HTML_SISTEMA, nombre=NOMBRE_LOCAL, nit=NIT_NEGOCIO, direccion=DIRECCION, 
                                    inventario=inv, carrito=session['carrito'], total_venta=total, 
@@ -201,11 +204,8 @@ def car_agregar():
 
     carrito = session.get('carrito', [])
     carrito.append({
-        "codigo": cod,
-        "nombre": p['producto'],
-        "cantidad": cant,
-        "total": round(float(p['precio']) * cant, 2),
-        "tipo": p['tipo']
+        "codigo": cod, "nombre": p['producto'], "cantidad": cant,
+        "total": round(float(p['precio']) * cant, 2), "tipo": p['tipo']
     })
     session['carrito'] = carrito
     return redirect("/")
@@ -228,16 +228,13 @@ def finalizar():
     
     factura_data = {
         "subtotal": float(sub), "iva": float(iva), "total": float(total),
-        "cliente_nombre": cliente['nombre'], 
-        "cliente_documento": cliente['documento'], 
+        "cliente_nombre": cliente['nombre'], "cliente_documento": cliente['documento'], 
         "detalles_json": detalles
     }
     
-    # Guardar factura y obtener el ID generado
     res = supabase.table("facturas").insert(factura_data).execute()
     factura_id = res.data[0]['id']
     
-    # Descontar stock
     for item in carrito:
         prod_res = supabase.table("inventario").select("stock").eq("codigo", item['codigo']).single().execute()
         nuevo_stock = float(prod_res.data['stock']) - float(item['cantidad'])
@@ -250,14 +247,11 @@ def finalizar():
 def generar_pdf(id_factura):
     res = supabase.table("facturas").select("*").eq("id", id_factura).execute()
     f = res.data[0] if res.data else None
-
     if not f: return "Factura no encontrada", 404
 
     pdf = FPDF(unit='mm', format=(80, 200))
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=5)
-    pdf.set_margins(5, 5, 5)
-
     pdf.set_font("Arial", "B", 12)
     pdf.multi_cell(70, 6, NOMBRE_LOCAL, 0, "C")
     pdf.set_font("Arial", "", 8)
@@ -266,7 +260,6 @@ def generar_pdf(id_factura):
     pdf.cell(70, 4, f"Tel: {TELEFONO}", ln=True, align="C")
     pdf.ln(2)
     pdf.cell(70, 2, "-"*40, ln=True, align="C")
-    
     pdf.set_font("Arial", "B", 9)
     pdf.cell(70, 5, f"FACTURA No. {f['id']}", ln=True, align="C")
     pdf.set_font("Arial", "", 8)
@@ -308,7 +301,6 @@ def generar_pdf(id_factura):
     pdf_out = pdf.output(dest='S').encode('latin1')
     output.write(pdf_out)
     output.seek(0)
-
     return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=f"Factura_{id_factura}.pdf")
 
 @app.route("/carrito/limpiar")
@@ -316,10 +308,8 @@ def car_limpiar():
     session['carrito'] = []
     return redirect("/")
 
+# Requisito para Vercel
+application = app
+
 if __name__ == "__main__":
     app.run(debug=True)
-
-
-
-    # Esto ayuda a Vercel a encontrar la aplicación
-app = app 
