@@ -1,4 +1,4 @@
 flask
 supabase==2.11.0
-fpdf2
+fpdf
 python-dotenv

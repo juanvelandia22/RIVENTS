@@ -16,9 +16,9 @@ TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
 
 # === CONEXIÓN A SUPABASE ===
-# Reemplaza con tus datos reales de la captura image_654f4b.png
-URL_SUPABASE = "https://paulpnqsfytnpbbitquo.supabase.co"
-KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig" 
+# Intenta leer de Vercel, si no, usa tus claves directas
+URL_SUPABASE = os.environ.get("SUPABASE_URL") or "https://paulpnqsfytnpbbitquo.supabase.co"
+KEY_SUPABASE = os.environ.get("SUPABASE_KEY") or "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig"
 
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
@@ -146,11 +146,9 @@ def index():
     if 'cliente' not in session: session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
     buscar = request.args.get('buscar', '')
     
-    # Traer inventario ordenado
     inv_res = supabase.table("inventario").select("*").order("codigo").execute()
     inv = inv_res.data if inv_res.data else []
     
-    # Buscador en historial
     if buscar:
         his_res = supabase.table("facturas").select("*")\
             .or_(f"cliente_documento.ilike.%{buscar}%,cliente_nombre.ilike.%{buscar}%")\
@@ -159,7 +157,6 @@ def index():
         his_res = supabase.table("facturas").select("*").order("fecha", desc=True).limit(10).execute()
     
     his = his_res.data if his_res.data else []
-        
     total = sum(item['total'] for item in session['carrito'])
     return render_template_string(HTML_SISTEMA, nombre=NOMBRE_LOCAL, nit=NIT_NEGOCIO, direccion=DIRECCION, 
                                    inventario=inv, carrito=session['carrito'], total_venta=total, 
@@ -235,11 +232,9 @@ def finalizar():
         "detalles_json": detalles
     }
     
-    # Guardar factura y obtener el ID generado
     res = supabase.table("facturas").insert(factura_data).execute()
     factura_id = res.data[0]['id']
     
-    # Descontar stock
     for item in carrito:
         prod_res = supabase.table("inventario").select("stock").eq("codigo", item['codigo']).single().execute()
         nuevo_stock = float(prod_res.data['stock']) - float(item['cantidad'])
@@ -307,11 +302,16 @@ def generar_pdf(id_factura):
     pdf.multi_cell(70, 4, "Gracias por su compra. Vuelva pronto!", 0, "C")
 
     output = io.BytesIO()
-    pdf_out = pdf.output(dest='S').encode('latin1')
-    output.write(pdf_out)
+    pdf_content = pdf.output(dest='S').encode('latin1') 
+    output.write(pdf_content)
     output.seek(0)
 
-    return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=f"Factura_{id_factura}.pdf")
+    return send_file(
+        output,
+        mimetype='application/pdf',
+        as_attachment=False,
+        download_name='factura.pdf'
+    )
 
 @app.route("/carrito/limpiar")
 def car_limpiar():
