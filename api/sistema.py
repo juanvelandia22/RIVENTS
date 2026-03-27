@@ -8,6 +8,13 @@ import io
 app = Flask(__name__)
 app.secret_key = 'pollo_raul_secret_key'
 
+# === STEP 2: STANDARDIZATION FUNCTION / FUNCIÓN DE ESTANDARIZACIÓN ===
+def estandarizar_dato(texto_entrada, mayusculas=False):
+    """Cleans spaces and standardizes case / Limpia espacios y estandariza mayúsculas/minúsculas"""
+    if not texto_entrada: return ""
+    limpio = texto_entrada.strip()
+    return limpio.upper() if mayusculas else limpio.lower()
+
 # === CONFIGURACIÓN LEGAL ===
 NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 NIT_NEGOCIO = "123.456.789-0"
@@ -16,12 +23,12 @@ TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
 
 # === CONEXIÓN A SUPABASE ===
-# Reemplaza con tus datos reales de la captura image_654f4b.png
 URL_SUPABASE = "https://paulpnqsfytnpbbitquo.supabase.co"
 KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig" 
 
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
+# === HTML SISTEMA (BILINGÜE / BILINGUAL) ===
 HTML_SISTEMA = """
 <!DOCTYPE html>
 <html lang="es">
@@ -52,25 +59,25 @@ HTML_SISTEMA = """
         </div>
 
         <div class="card">
-            <h2>📦 Inventario</h2>
+            <h2>📦 Inventario / Inventory</h2>
             <form action="/inventario/guardar" method="POST">
                 <div style="display:flex; gap:10px;">
                     <input type="number" name="codigo" placeholder="Cód" required>
-                    <input type="text" name="producto" placeholder="Producto" required>
+                    <input type="text" name="producto" placeholder="Producto / Product" required>
                 </div>
                 <div style="display:flex; gap:10px;">
-                    <input type="number" step="0.01" name="precio" placeholder="Precio" required>
+                    <input type="number" step="0.01" name="precio" placeholder="Precio / Price" required>
                     <input type="number" step="0.01" name="stock" placeholder="Stock" required>
                     <select name="tipo">
                         <option value="Kilo">Kilo</option>
-                        <option value="Und">Unidad</option>
+                        <option value="Und">Unidad / Unit</option>
                     </select>
                 </div>
-                <button type="submit" class="btn-success">Guardar Producto</button>
+                <button type="submit" class="btn-success">Guardar / Save</button>
             </form>
             <div style="max-height: 300px; overflow-y: auto;">
                 <table>
-                    <thead><tr><th>Cód</th><th>Producto</th><th>Precio</th><th>Stock</th><th>Tipo</th><th>Acción</th></tr></thead>
+                    <thead><tr><th>Cód</th><th>Producto / Product</th><th>Precio</th><th>Stock</th><th>Tipo</th><th>Acción</th></tr></thead>
                     <tbody>
                         {% for p in inventario %}
                         <tr>
@@ -88,39 +95,39 @@ HTML_SISTEMA = """
         </div>
 
         <div class="card">
-            <h2>🛒 Venta Rápida</h2>
+            <h2>🛒 Venta Rápida / Fast Sale</h2>
             <form action="/carrito/agregar" method="POST">
                 <div style="display:flex; gap:10px;">
-                    <input type="number" name="codigo_vta" placeholder="Código..." required autofocus>
+                    <input type="number" name="codigo_vta" placeholder="Código / Code..." required autofocus>
                     <input type="number" step="0.01" name="cantidad" placeholder="Cant." required style="width:100px;">
-                    <button type="submit" style="width:120px;">Añadir</button>
+                    <button type="submit" style="width:120px;">Añadir / Add</button>
                 </div>
             </form>
             <hr>
-            <h3>👤 Datos Cliente</h3>
+            <h3>👤 Datos Cliente / Client Data</h3>
             <form action="/cliente/actualizar" method="POST">
-                <input type="text" name="nombre" placeholder="Nombre" value="{{ cliente.nombre }}">
+                <input type="text" name="nombre" placeholder="Nombre / Name" value="{{ cliente.nombre }}">
                 <input type="text" name="documento" placeholder="Cédula/NIT" value="{{ cliente.documento }}">
-                <button type="submit" style="background:#95a5a6">Actualizar</button>
+                <button type="submit" style="background:#95a5a6">Actualizar / Update</button>
             </form>
             <div class="total-display">TOTAL: ${{ "{:,.0f}".format(total_venta) }}</div>
             {% if carrito %}
                 {% for item in carrito %}
                 <p style="font-size:13px; margin:5px 0;">• {{ item.nombre }} ({{ item.cantidad }} {{ item.tipo }}) - ${{ "{:,.0f}".format(item.total) }}</p>
                 {% endfor %}
-                <a href="/venta/finalizar"><button class="btn-success">FINALIZAR Y FACTURAR PDF</button></a>
-                <a href="/carrito/limpiar"><button style="background:#e74c3c; margin-top:5px;">VACIAR</button></a>
+                <a href="/venta/finalizar"><button class="btn-success">FINALIZAR Y FACTURAR / FINISH & BILL</button></a>
+                <a href="/carrito/limpiar"><button style="background:#e74c3c; margin-top:5px;">VACIAR / CLEAR</button></a>
             {% endif %}
         </div>
 
         <div class="card full-width">
-            <h2>📊 Historial y Buscador</h2>
+            <h2>📊 Historial y Buscador / History & Search</h2>
             <form action="/" method="GET" style="display:flex; gap:10px; margin-bottom:15px;">
-                <input type="text" name="buscar" placeholder="Cédula o Nombre..." value="{{ busqueda }}">
-                <button type="submit" style="width:120px;">🔍 Buscar</button>
+                <input type="text" name="buscar" placeholder="Cédula o Nombre / ID or Name..." value="{{ busqueda }}">
+                <button type="submit" style="width:120px;">🔍 Buscar / Search</button>
             </form>
             <table>
-                <thead><tr><th>No.</th><th>Fecha</th><th>Cliente</th><th>Cédula</th><th>Total</th><th>Opciones</th></tr></thead>
+                <thead><tr><th>No.</th><th>Fecha / Date</th><th>Cliente / Client</th><th>Cédula / ID</th><th>Total</th><th>Opciones / Options</th></tr></thead>
                 <tbody>
                     {% for f in historial %}
                     <tr>
@@ -129,7 +136,7 @@ HTML_SISTEMA = """
                         <td>{{ f.cliente_nombre }}</td>
                         <td>{{ f.cliente_documento }}</td>
                         <td><b>${{ "{:,.0f}".format(f.total) }}</b></td>
-                        <td><a href="/factura/pdf/{{ f.id }}" target="_blank">🖨️ Descargar / Imprimir</a></td>
+                        <td><a href="/factura/pdf/{{ f.id }}" target="_blank">🖨️ Imprimir / Print PDF</a></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -144,13 +151,13 @@ HTML_SISTEMA = """
 def index():
     if 'carrito' not in session: session['carrito'] = []
     if 'cliente' not in session: session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
-    buscar = request.args.get('buscar', '')
     
-    # Traer inventario ordenado
+    # Estandarización de Búsqueda (Paso 3)
+    buscar = estandarizar_dato(request.args.get('buscar', ''))
+    
     inv_res = supabase.table("inventario").select("*").order("codigo").execute()
     inv = inv_res.data if inv_res.data else []
     
-    # Buscador en historial
     if buscar:
         his_res = supabase.table("facturas").select("*")\
             .or_(f"cliente_documento.ilike.%{buscar}%,cliente_nombre.ilike.%{buscar}%")\
@@ -159,7 +166,6 @@ def index():
         his_res = supabase.table("facturas").select("*").order("fecha", desc=True).limit(10).execute()
     
     his = his_res.data if his_res.data else []
-        
     total = sum(item['total'] for item in session['carrito'])
     return render_template_string(HTML_SISTEMA, nombre=NOMBRE_LOCAL, nit=NIT_NEGOCIO, direccion=DIRECCION, 
                                    inventario=inv, carrito=session['carrito'], total_venta=total, 
@@ -169,14 +175,26 @@ def index():
 def inv_guardar():
     try:
         c = request.form
+        # Limpieza y estandarización a MAYÚSCULAS para el inventario
+        prod_limpio = estandarizar_dato(c['producto'], mayusculas=True)
+        
         datos = {
             "codigo": int(c['codigo']),
-            "producto": c['producto'].upper(),
+            "producto": prod_limpio,
             "precio": float(c['precio']),
             "stock": float(c['stock']),
             "tipo": c['tipo'],
             "fecha_registro": datetime.now().strftime('%Y-%m-%d')
         }
+
+        # --- REPORTE PROFESIONAL POR CONSOLA (PASO 3) ---
+        print("\n" + "="*50)
+        print(f"{'OPERATION / OPERACIÓN':<25} | {'VALUE / VALOR':<20}")
+        print("-" * 50)
+        print(f"{'Product / Producto':<25} | {prod_limpio:<20}")
+        print(f"{'Stock / Inventario':<25} | {datos['stock']:<20}")
+        print("="*50 + "\n")
+
         supabase.table("inventario").upsert(datos).execute()
         return redirect("/")
     except Exception as e:
@@ -214,7 +232,10 @@ def car_agregar():
 
 @app.route("/cliente/actualizar", methods=["POST"])
 def cli_upd():
-    session['cliente'] = {"nombre": request.form.get("nombre"), "documento": request.form.get("documento")}
+    # Estandarización de datos del cliente
+    nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
+    doc_cli = estandarizar_dato(request.form.get("documento"))
+    session['cliente'] = {"nombre": nom_cli, "documento": doc_cli}
     return redirect("/")
 
 @app.route("/venta/finalizar")
@@ -235,11 +256,9 @@ def finalizar():
         "detalles_json": detalles
     }
     
-    # Guardar factura y obtener el ID generado
     res = supabase.table("facturas").insert(factura_data).execute()
     factura_id = res.data[0]['id']
     
-    # Descontar stock
     for item in carrito:
         prod_res = supabase.table("inventario").select("stock").eq("codigo", item['codigo']).single().execute()
         nuevo_stock = float(prod_res.data['stock']) - float(item['cantidad'])
@@ -304,7 +323,7 @@ def generar_pdf(id_factura):
     pdf.cell(30, 8, f"${float(f['total']):,.0f}", 0, 1, "R")
     pdf.ln(5)
     pdf.set_font("Arial", "I", 7)
-    pdf.multi_cell(70, 4, "Gracias por su compra. Vuelva pronto!", 0, "C")
+    pdf.multi_cell(70, 4, "Gracias por su compra. Vuelva pronto! / Thanks for your purchase!", 0, "C")
 
     output = io.BytesIO()
     pdf_out = pdf.output(dest='S').encode('latin1')
