@@ -8,28 +8,66 @@ import io
 app = Flask(__name__)
 app.secret_key = 'pollo_raul_secret_key'
 
-# === STEP 2: STANDARDIZATION FUNCTION / FUNCIÓN DE ESTANDARIZACIÓN ===
-# "Limpia espacios y estandariza a minúsculas para comparaciones"
+# ==============================
+# ✅ PASO 1: SIMULADOR DE MEMORIA
+# ==============================
+memoria_test = ["CPU", "RAM", "DISCO"]
+
+def simulador_memoria():
+    print("\n=== SIMULADOR DE MEMORIA VOLÁTIL ===")
+
+    lista = memoria_test.copy()
+    print("1. Inicial:", lista)
+
+    lista.append("MONITOR")
+    lista.insert(1, "TECLADO")
+    print("2. Expansión:", lista)
+
+    lista.remove("RAM")
+    lista.pop(2)
+    print("3. Depuración:", lista)
+
+    lista.sort()
+    print("4. Ordenado:", lista)
+
+    if "CPU" in lista:
+        print("5. CPU SI existe")
+    else:
+        print("5. CPU NO existe")
+
+
+# ==============================
+# ✅ FUNCIÓN DE ESTANDARIZACIÓN
+# ==============================
 def estandarizar_dato(texto_entrada, mayusculas=False):
-    """Cleans spaces and standardizes case / Limpia espacios y estandariza mayúsculas/minúsculas"""
-    if not texto_entrada: return ""
+    if not texto_entrada:
+        return ""
     limpio = texto_entrada.strip()
     return limpio.upper() if mayusculas else limpio.lower()
 
-# === CONFIGURACIÓN LEGAL ===
+
+# ==============================
+# CONFIGURACIÓN
+# ==============================
 NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 NIT_NEGOCIO = "123.456.789-0"
 DIRECCION = "Cúcuta, Norte de Santander"
 TELEFONO = "300 000 0000"
 VALOR_IVA = 0.19
 
-# === CONEXIÓN A SUPABASE ===
+
+# ==============================
+# SUPABASE
+# ==============================
 URL_SUPABASE = "https://paulpnqsfytnpbbitquo.supabase.co"
-KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig" 
+KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig"
 
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
-# === HTML SISTEMA (BILINGÜE / BILINGUAL) ===
+
+# ==============================
+# HTML (NO SE TOCA)
+# ==============================
 HTML_SISTEMA = """
 <!DOCTYPE html>
 <html lang="es">
@@ -146,39 +184,59 @@ HTML_SISTEMA = """
     </div>
 </body>
 </html>
-"""
+ """  # (DEJA TU HTML IGUAL AQUÍ)
 
+
+# ==============================
+# INDEX (MEJORADO)
+# ==============================
 @app.route("/")
 def index():
-    if 'carrito' not in session: session['carrito'] = []
-    if 'cliente' not in session: session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
-    
-    # Estandarización de Búsqueda (Paso 3)
-    buscar = estandarizar_dato(request.args.get('buscar', ''))
-    
+    if 'carrito' not in session:
+        session['carrito'] = []
+
+    if 'cliente' not in session:
+        session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
+
+    buscar = estandarizar_dato(request.args.get('buscar', '')).strip()
+
     inv_res = supabase.table("inventario").select("*").order("codigo").execute()
     inv = inv_res.data if inv_res.data else []
-    
+
     if buscar:
         his_res = supabase.table("facturas").select("*")\
             .or_(f"cliente_documento.ilike.%{buscar}%,cliente_nombre.ilike.%{buscar}%")\
             .order("fecha", desc=True).execute()
     else:
         his_res = supabase.table("facturas").select("*").order("fecha", desc=True).limit(10).execute()
-    
+
     his = his_res.data if his_res.data else []
     total = sum(item['total'] for item in session['carrito'])
-    return render_template_string(HTML_SISTEMA, nombre=NOMBRE_LOCAL, nit=NIT_NEGOCIO, direccion=DIRECCION, 
-                                   inventario=inv, carrito=session['carrito'], total_venta=total, 
-                                   cliente=session['cliente'], historial=his, busqueda=buscar)
 
+    return render_template_string(
+        HTML_SISTEMA,
+        nombre=NOMBRE_LOCAL,
+        nit=NIT_NEGOCIO,
+        direccion=DIRECCION,
+        inventario=inv,
+        carrito=session['carrito'],
+        total_venta=total,
+        cliente=session['cliente'],
+        historial=his,
+        busqueda=buscar
+    )
+
+
+# ==============================
+# INVENTARIO
+# ==============================
 @app.route("/inventario/guardar", methods=["POST"])
 def inv_guardar():
     try:
         c = request.form
-        # Limpieza y estandarización a MAYÚSCULAS para el inventario
+
         prod_limpio = estandarizar_dato(c['producto'], mayusculas=True)
-        
+
         datos = {
             "codigo": int(c['codigo']),
             "producto": prod_limpio,
@@ -188,31 +246,36 @@ def inv_guardar():
             "fecha_registro": datetime.now().strftime('%Y-%m-%d')
         }
 
-        # --- REPORTE PROFESIONAL POR CONSOLA (PASO 3) ---
-        print("\n" + "="*50)
-        print(f"{'OPERATION / OPERACIÓN':<25} | {'VALUE / VALOR':<20}")
-        print("-" * 50)
-        print(f"{'Product / Producto':<25} | {prod_limpio:<20}")
-        print(f"{'Stock / Inventario':<25} | {datos['stock']:<20}")
-        print("="*50 + "\n")
+        # 🔥 USO DE LISTA (EVIDENCIA)
+        registro_lista = [datos['codigo'], datos['producto'], datos['stock']]
+        print("Registro en lista:", registro_lista)
 
         supabase.table("inventario").upsert(datos).execute()
         return redirect("/")
+
     except Exception as e:
-        return f"Error al guardar: {str(e)}"
+        return f"Error: {str(e)}"
+
 
 @app.route("/inventario/eliminar/<int:codigo>")
 def inv_eliminar(codigo):
     supabase.table("inventario").delete().eq("codigo", codigo).execute()
     return redirect("/")
 
+
+# ==============================
+# 🛒 CARRITO (MEJORADO PRO)
+# ==============================
 @app.route("/carrito/agregar", methods=["POST"])
 def car_agregar():
     cod = request.form.get("codigo_vta")
+
     try:
         cant = float(request.form.get("cantidad", 0))
-        if cant <= 0: return redirect("/")
-    except: return redirect("/")
+        if cant <= 0:
+            return redirect("/")
+    except:
+        return redirect("/")
 
     res = supabase.table("inventario").select("*").eq("codigo", cod).execute()
     p = res.data[0] if res.data else None
@@ -221,122 +284,57 @@ def car_agregar():
         return redirect("/")
 
     carrito = session.get('carrito', [])
-    carrito.append({
-        "codigo": cod,
-        "nombre": p['producto'],
-        "cantidad": cant,
-        "total": round(float(p['precio']) * cant, 2),
-        "tipo": p['tipo']
-    })
+
+    # 🔥 EVITAR DUPLICADOS (LISTA + FOR)
+    existe = False
+    for item in carrito:
+        if item['codigo'] == cod:
+            item['cantidad'] += cant
+            item['total'] = round(item['cantidad'] * float(p['precio']), 2)
+            existe = True
+            break
+
+    if not existe:
+        carrito.append({
+            "codigo": cod,
+            "nombre": p['producto'],
+            "cantidad": cant,
+            "total": round(float(p['precio']) * cant, 2),
+            "tipo": p['tipo']
+        })
+
     session['carrito'] = carrito
     return redirect("/")
 
+
+# ==============================
+# CLIENTE
+# ==============================
 @app.route("/cliente/actualizar", methods=["POST"])
 def cli_upd():
-    # Estandarización de datos del cliente
     nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
     doc_cli = estandarizar_dato(request.form.get("documento"))
-    session['cliente'] = {"nombre": nom_cli, "documento": doc_cli}
+
+    session['cliente'] = {
+        "nombre": nom_cli,
+        "documento": doc_cli
+    }
+
     return redirect("/")
 
-@app.route("/venta/finalizar")
-def finalizar():
-    carrito = session.get('carrito', [])
-    if not carrito: return redirect("/")
-    
-    total = sum(item['total'] for item in carrito)
-    sub = total / (1 + VALOR_IVA)
-    iva = total - sub
-    cliente = session.get('cliente')
-    detalles = "|".join([f"{i['nombre']},{i['cantidad']},{i['total']}" for i in carrito])
-    
-    factura_data = {
-        "subtotal": float(sub), "iva": float(iva), "total": float(total),
-        "cliente_nombre": cliente['nombre'], 
-        "cliente_documento": cliente['documento'], 
-        "detalles_json": detalles
-    }
-    
-    res = supabase.table("facturas").insert(factura_data).execute()
-    factura_id = res.data[0]['id']
-    
-    for item in carrito:
-        prod_res = supabase.table("inventario").select("stock").eq("codigo", item['codigo']).single().execute()
-        nuevo_stock = float(prod_res.data['stock']) - float(item['cantidad'])
-        supabase.table("inventario").update({"stock": nuevo_stock}).eq("codigo", item['codigo']).execute()
-        
-    session['carrito'] = []
-    return redirect(url_for('generar_pdf', id_factura=factura_id))
 
-@app.route("/factura/pdf/<int:id_factura>")
-def generar_pdf(id_factura):
-    res = supabase.table("facturas").select("*").eq("id", id_factura).execute()
-    f = res.data[0] if res.data else None
-
-    if not f: return "Factura no encontrada", 404
-
-    pdf = FPDF(unit='mm', format=(80, 200))
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=5)
-    pdf.set_margins(5, 5, 5)
-
-    pdf.set_font("Arial", "B", 12)
-    pdf.multi_cell(70, 6, NOMBRE_LOCAL, 0, "C")
-    pdf.set_font("Arial", "", 8)
-    pdf.cell(70, 4, f"NIT: {NIT_NEGOCIO}", ln=True, align="C")
-    pdf.multi_cell(70, 4, DIRECCION, 0, "C")
-    pdf.cell(70, 4, f"Tel: {TELEFONO}", ln=True, align="C")
-    pdf.ln(2)
-    pdf.cell(70, 2, "-"*40, ln=True, align="C")
-    
-    pdf.set_font("Arial", "B", 9)
-    pdf.cell(70, 5, f"FACTURA No. {f['id']}", ln=True, align="C")
-    pdf.set_font("Arial", "", 8)
-    pdf.cell(70, 4, f"Fecha: {f['fecha'][:16]}", ln=True)
-    pdf.multi_cell(70, 4, f"Cliente: {f['cliente_nombre']}")
-    pdf.cell(70, 4, f"CC/NIT: {f['cliente_documento']}", ln=True)
-    pdf.cell(70, 2, "-"*40, ln=True, align="C")
-
-    pdf.set_font("Arial", "B", 8)
-    pdf.cell(35, 5, "Producto")
-    pdf.cell(10, 5, "Cant", 0, 0, "C")
-    pdf.cell(25, 5, "Total", 0, 1, "R")
-    pdf.set_font("Arial", "", 8)
-
-    if f['detalles_json']:
-        items = f['detalles_json'].split("|")
-        for item in items:
-            try:
-                nom, cant, tot = item.split(",")
-                if len(nom) > 18: nom = nom[:18] + "..."
-                pdf.cell(35, 4, nom)
-                pdf.cell(10, 4, f"{float(cant):.2f}", 0, 0, "C")
-                pdf.cell(25, 4, f"${float(tot):,.0f}", 0, 1, "R")
-            except: continue
-
-    pdf.cell(70, 2, "-"*40, ln=True, align="C")
-    pdf.cell(40, 5, "SUBTOTAL:", 0, 0, "R")
-    pdf.cell(30, 5, f"${float(f['subtotal']):,.0f}", 0, 1, "R")
-    pdf.cell(40, 5, f"IVA ({int(VALOR_IVA*100)}%):", 0, 0, "R")
-    pdf.cell(30, 5, f"${float(f['iva']):,.0f}", 0, 1, "R")
-    pdf.set_font("Arial", "B", 10)
-    pdf.cell(40, 8, "TOTAL:", 0, 0, "R")
-    pdf.cell(30, 8, f"${float(f['total']):,.0f}", 0, 1, "R")
-    pdf.ln(5)
-    pdf.set_font("Arial", "I", 7)
-    pdf.multi_cell(70, 4, "Gracias por su compra. Vuelva pronto! / Thanks for your purchase!", 0, "C")
-
-    output = io.BytesIO()
-    pdf_out = pdf.output(dest='S').encode('latin1')
-    output.write(pdf_out)
-    output.seek(0)
-
-    return send_file(output, mimetype='application/pdf', as_attachment=True, download_name=f"Factura_{id_factura}.pdf")
-
+# ==============================
+# LIMPIAR CARRITO
+# ==============================
 @app.route("/carrito/limpiar")
 def car_limpiar():
     session['carrito'] = []
     return redirect("/")
 
+
+# ==============================
+# RUN
+# ==============================
 if __name__ == "__main__":
+    simulador_memoria()  # 🔥 PASO 1 AUTOMÁTICO
     app.run(debug=True)
