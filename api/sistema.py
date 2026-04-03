@@ -9,6 +9,7 @@ app = Flask(__name__)
 app.secret_key = 'pollo_raul_secret_key'
 
 # === STEP 2: STANDARDIZATION FUNCTION / FUNCIÓN DE ESTANDARIZACIÓN ===
+# "Limpia espacios y estandariza a minúsculas para comparaciones"
 def estandarizar_dato(texto_entrada, mayusculas=False):
     """Cleans spaces and standardizes case / Limpia espacios y estandariza mayúsculas/minúsculas"""
     if not texto_entrada: return ""
