@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, redirect, session, send_file, url_for
+from flask import Flask, render_template_string, request, redirect, session, send_file, url_for, jsonify
 from supabase import create_client, Client
 from datetime import datetime
 import os
@@ -66,7 +66,7 @@ supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
 
 # ==============================
-# HTML (NO SE TOCA)
+# HTML (NO SE TOCA - MANTENIDO IGUAL)
 # ==============================
 HTML_SISTEMA = """
 <!DOCTYPE html>
@@ -184,7 +184,7 @@ HTML_SISTEMA = """
     </div>
 </body>
 </html>
- """  # (DEJA TU HTML IGUAL AQUÍ)
+ """
 
 
 # ==============================
@@ -196,7 +196,13 @@ def index():
         session['carrito'] = []
 
     if 'cliente' not in session:
-        session['cliente'] = {"nombre": "Consumidor Final", "documento": "222222222222"}
+        # Reto Avance 7: El cliente ahora es un objeto (diccionario) con más de 3 atributos
+        session['cliente'] = {
+            "nombre": "Consumidor Final", 
+            "documento": "222222222222",
+            "puntos": 0,            # Atributo Integer
+            "es_frecuente": False    # Atributo Boolean
+        }
 
     buscar = estandarizar_dato(request.args.get('buscar', '')).strip()
 
@@ -237,16 +243,18 @@ def inv_guardar():
 
         prod_limpio = estandarizar_dato(c['producto'], mayusculas=True)
 
+        # RETO AVANCE 7: Cada registro ahora es un objeto (diccionario) con atributos múltiples
         datos = {
-            "codigo": int(c['codigo']),
-            "producto": prod_limpio,
-            "precio": float(c['precio']),
-            "stock": float(c['stock']),
-            "tipo": c['tipo'],
+            "codigo": int(c['codigo']),         # Integer
+            "producto": prod_limpio,            # String
+            "precio": float(c['precio']),       # Float
+            "stock": float(c['stock']),         # Float
+            "tipo": c['tipo'],                  # String
+            "disponible": float(c['stock']) > 0, # Boolean (Requerimiento técnico)
             "fecha_registro": datetime.now().strftime('%Y-%m-%d')
         }
 
-        # 🔥 USO DE LISTA (EVIDENCIA)
+        # 🔥 USO DE LISTA (EVIDENCIA) - NO SE BORRA
         registro_lista = [datos['codigo'], datos['producto'], datos['stock']]
         print("Registro en lista:", registro_lista)
 
@@ -255,6 +263,33 @@ def inv_guardar():
 
     except Exception as e:
         return f"Error: {str(e)}"
+
+
+# ==============================
+# ✅ ACTUALIZACIÓN DE DATOS (NUEVO RETO AVANCE 7)
+# ==============================
+@app.route("/inventario/actualizar_precio", methods=["POST"])
+def actualizar_precio_por_llave():
+    """
+    Busca por la llave (código) y actualiza el precio.
+    Mensajes en Inglés y Español.
+    """
+    try:
+        cod = int(request.form.get("codigo"))
+        nuevo_p = float(request.form.get("nuevo_precio"))
+
+        # Actualizamos en Supabase buscando por la llave
+        res = supabase.table("inventario").update({"precio": nuevo_p}).eq("codigo", cod).execute()
+
+        if res.data:
+            print(f"SUCCESS: Product {cod} updated / Producto {cod} actualizado")
+        else:
+            print(f"NOT FOUND: Search key {cod} invalid / Llave de búsqueda {cod} no válida")
+        
+        return redirect("/")
+    except Exception as e:
+        print(f"ERROR: Update failed / Fallo en actualización: {str(e)}")
+        return redirect("/")
 
 
 @app.route("/inventario/eliminar/<int:codigo>")
@@ -312,13 +347,35 @@ def car_agregar():
 # ==============================
 @app.route("/cliente/actualizar", methods=["POST"])
 def cli_upd():
+    # nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
+    # doc_cli = estandarizar_dato(request.form.get("documento"))
+    # (Comentamos lo anterior para implementar la búsqueda real en Supabase)
+
     nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
     doc_cli = estandarizar_dato(request.form.get("documento"))
 
-    session['cliente'] = {
-        "nombre": nom_cli,
-        "documento": doc_cli
-    }
+    # Intentamos buscar el cliente en la base de datos para "colocar los datos"
+    res = supabase.table("clientes").select("*").eq("cedula", doc_cli).execute()
+    
+    if res.data:
+        # Si existe, lo cargamos como objeto (diccionario)
+        c_db = res.data[0]
+        session['cliente'] = {
+            "nombre": c_db['nombre'],
+            "documento": c_db['cedula'],
+            "puntos": c_db.get('puntos', 0),
+            "es_frecuente": True
+        }
+        print("CLIENT DATA RETRIEVED / DATOS DE CLIENTE RECUPERADOS")
+    else:
+        # Si no existe, creamos el objeto nuevo
+        session['cliente'] = {
+            "nombre": nom_cli,
+            "documento": doc_cli,
+            "puntos": 0,
+            "es_frecuente": False
+        }
+        print("NEW CLIENT IN SESSION / NUEVO CLIENTE EN SESIÓN")
 
     return redirect("/")
 
