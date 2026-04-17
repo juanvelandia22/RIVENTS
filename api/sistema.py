@@ -1,29 +1,35 @@
 # ============================================================
 # SISTEMA DE FACTURACIÓN - POLLO Y CHARCUTERÍA RAÚL
-# Framework: Flask (Python) | Base de datos: Supabase
-# Generación de PDF: fpdf | Sesiones: Flask Session
+# BILLING SYSTEM - POLLO Y CHARCUTERÍA RAÚL
+#
+# Framework: Flask (Python) | Base de datos / Database: Supabase
+# Generación de PDF / PDF Generation: fpdf
+# Sesiones / Sessions: Flask Session
 # ============================================================
 
 from flask import Flask, render_template_string, request, redirect, session, send_file, url_for, jsonify
-from supabase import create_client, Client  # Cliente oficial de Supabase para Python
-from datetime import datetime               # Para registrar fechas y horas
-import os                                  # Para variables de entorno del sistema operativo
-from fpdf import FPDF                      # Para generar archivos PDF
-import io                                  # Para manejar flujos de datos en memoria (sin guardar archivos físicos)
+from supabase import create_client, Client  # Cliente oficial de Supabase / Official Supabase client
+from datetime import datetime               # Para fechas y horas / For dates and times
+import os                                  # Variables del sistema / System environment variables
+from fpdf import FPDF                      # Generación de PDFs / PDF generation
+import io                                  # Flujos de datos en memoria / In-memory data streams
 
 # ------------------------------------------------------------
 # INICIALIZACIÓN DE LA APLICACIÓN FLASK
-# secret_key: llave para firmar y cifrar las cookies de sesión
+# FLASK APPLICATION INITIALIZATION
+#
+# secret_key: llave para cifrar cookies de sesión
+# secret_key: key used to sign and encrypt session cookies
 # ------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = 'pollo_raul_secret_key'
-
-
 # ==============================
-# ✅ PASO 1: SIMULADOR DE MEMORIA
+# ✅ PASO 1 / STEP 1: SIMULADOR DE MEMORIA / MEMORY SIMULATOR
 # ==============================
-# Lista global que representa los componentes iniciales en "memoria"
+# Lista global que representa componentes iniciales en "memoria"
+# Global list representing initial components in "memory"
 # Se usa como base para demostrar operaciones sobre listas en Python
+# It is used as a basis for demonstrating operations on lists in Python
 memoria_test = ["CPU", "RAM", "DISCO"]
 
 def simulador_memoria():
@@ -31,24 +37,29 @@ def simulador_memoria():
     Función didáctica que simula operaciones básicas sobre listas (memoria volátil).
     Se ejecuta automáticamente al iniciar la aplicación.
     Demuestra: copia, append, insert, remove, pop, sort y búsqueda con 'in'.
+
+    Educational function that simulates basic operations on lists (volatile memory).
+    It runs automatically when the application starts.
+    It demonstrates: copy, append, insert, remove, pop, sort, and search using 'in'.
+
     """
     print("\n=== SIMULADOR DE MEMORIA VOLÁTIL ===")
 
-    lista = memoria_test.copy()        # Copia la lista original para no modificarla
+    lista = memoria_test.copy()        # Copia la lista original para no modificarla # Copy the original list so you don't modify it
     print("1. Inicial:", lista)
 
-    lista.append("MONITOR")            # Agrega "MONITOR" al final
-    lista.insert(1, "TECLADO")         # Inserta "TECLADO" en la posición 1
+    lista.append("MONITOR")            # Agrega "MONITOR" al final  # Add "MONITOR" to the end
+    lista.insert(1, "TECLADO")         # Inserta "TECLADO" en la posición 1 # Insert "KEYBOARD" in position 1
     print("2. Expansión:", lista)
 
-    lista.remove("RAM")                # Elimina el primer elemento con valor "RAM"
-    lista.pop(2)                       # Elimina el elemento en el índice 2
+    lista.remove("RAM")                # Elimina el primer elemento con valor "RAM"  # Remove the first item with the value "RAM"
+    lista.pop(2)                       # Elimina el elemento en el índice 2  # Remove the element at index 2
     print("3. Depuración:", lista)
 
-    lista.sort()                       # Ordena la lista alfabéticamente
+    lista.sort()                       # Ordena la lista alfabéticamente  # Sort the list alphabetically
     print("4. Ordenado:", lista)
 
-    if "CPU" in lista:                 # Verifica si "CPU" existe en la lista
+    if "CPU" in lista:                 # Verifica si "CPU" existe en la lista  # Check if "CPU" exists in the list
         print("5. CPU SI existe")
     else:
         print("5. CPU NO existe")
@@ -56,6 +67,7 @@ def simulador_memoria():
 
 # ==============================
 # ✅ FUNCIÓN DE ESTANDARIZACIÓN
+#      STANDARDIZATION FUNCTION
 # ==============================
 def estandarizar_dato(texto_entrada, mayusculas=False):
     """
@@ -77,19 +89,29 @@ def estandarizar_dato(texto_entrada, mayusculas=False):
     limpio = texto_entrada.strip()
     return limpio.upper() if mayusculas else limpio.lower()
 
-
 # ==============================
 # CONFIGURACIÓN
 # ==============================
 # Constantes globales del negocio, usadas en toda la aplicación
 # para mostrar encabezados en la interfaz y en los PDFs de factura
+# ==============================
+# CONFIGURATION
+# ==============================
+# Global business constants, used throughout the application
+# to display headers in the interface and invoice PDFs
+
 NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 NIT_NEGOCIO = "123.456.789-0"
 DIRECCION = "Cúcuta, Norte de Santander"
 TELEFONO = "300 000 0000"
-VALOR_IVA = 0.19   # IVA del 19% aplicado en cálculos de facturación
+VALOR_IVA = 0.19   # IVA del 19% aplicado en cálculos de facturación  # 19% VAT applied to billing calculations
 
-
+# ==============================
+# SUPABASE
+# ==============================
+# Connection credentials to the project in Supabase (cloud database)
+# URL_SUPABASE: Project endpoint
+# KEY_SUPABASE: Anonymous public key for authentication
 # ==============================
 # SUPABASE
 # ==============================
@@ -99,12 +121,22 @@ VALOR_IVA = 0.19   # IVA del 19% aplicado en cálculos de facturación
 URL_SUPABASE = "https://paulpnqsfytnpbbitquo.supabase.co"
 KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig"
 
-# Se crea la instancia del cliente Supabase para usar en todas las rutas
+# Se crea la instancia del cliente Supabase para usar en todas las rutas   # The Supabase client instance is created for use on all routes
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
-
+# ===============================
+# HTML
 # ==============================
-# HTML (NO SE TOCA - MANTENIDO IGUAL)
+# Complete HTML template rendered with Jinja2 from Flask.
+
+# Contains the entire system interface:
+# - Business header
+# - Inventory form and table
+# - Quick Sale module with shopping cart and customer data
+# - Invoice history with search function
+# Dynamic values ​​are injected using Jinja2's {{ variable }}
+# ==============================
+# HTML 
 # ==============================
 # Plantilla HTML completa renderizada con Jinja2 desde Flask.
 # Contiene toda la interfaz del sistema:
@@ -234,56 +266,68 @@ HTML_SISTEMA ="""
 
 
 # ==============================
-# INDEX (MEJORADO)
+# INDEX 
 # ==============================
 @app.route("/")
 def index():
     """
     Ruta principal del sistema. Carga y renderiza la interfaz completa.
+    Main route of the system. Loads and renders the full interface.
 
-    Comportamiento:
-    - Inicializa el carrito de compras en sesión si no existe.
-    - Inicializa el objeto cliente en sesión con valores por defecto si no existe.
-    - El cliente tiene 4 atributos: nombre (str), documento (str),
-    - puntos (int) y es_frecuente (bool).
-    - Permite buscar facturas por cédula o nombre del cliente.
+    Comportamiento / Behavior:
+    - Inicializa el carrito en sesión si no existe.
+    -  Initializes the shopping cart in session if it doesn't exist.
+    - Inicializa el objeto cliente con valores por defecto si no existe.
+    -  Initializes the client object with default values if it doesn't exist.
+    -  Atributos / Attributes: nombre (str), documento (str), puntos (int), es_frecuente (bool).
+    - Estandariza el parámetro de búsqueda de la URL.
+    -  Standardizes the search parameter from the URL.
     - Consulta el inventario completo ordenado por código.
-    - Si hay búsqueda activa, filtra las facturas; si no, carga las últimas 10.
-    - Calcula el total del carrito sumando los totales de cada ítem.
-    - Renderiza la plantilla HTML con todos los datos necesarios.
+    -  Queries the full inventory ordered by product code.
+    - Si hay búsqueda activa, filtra facturas; si no, carga las últimas 10.
+    -  If search is active, filters invoices; otherwise loads the last 10.
+    - Calcula el total del carrito.
+    -  Calculates the cart total.
+    - Renderiza la plantilla HTML con todos los datos.
+    -  Renders the HTML template with all required data.
     """
     if 'carrito' not in session:
         session['carrito'] = []
 
     if 'cliente' not in session:
-        # Reto Avance 7: El cliente ahora es un objeto (diccionario) con más de 3 atributos
+        # Reto Avance 7: El cliente es un objeto diccionario con más de 3 atributos
+        # Advance Challenge 7: Client is a dictionary object with more than 3 attributes
         session['cliente'] = {
-            "nombre": "Consumidor Final", 
+            "nombre": "Consumidor Final",
             "documento": "222222222222",
-            "puntos": 0,            # Atributo Integer
-            "es_frecuente": False    # Atributo Boolean
+            "puntos": 0,             # Atributo entero / Integer attribute
+            "es_frecuente": False     # Atributo booleano / Boolean attribute
         }
 
     # Limpia y estandariza el parámetro de búsqueda de la URL (?buscar=...)
+    # Cleans and standardizes the search parameter from the URL (?buscar=...)
     buscar = estandarizar_dato(request.args.get('buscar', '')).strip()
 
-    # Consulta todos los productos del inventario ordenados por código ascendente
+    # Consulta todos los productos ordenados por código ascendente
+    # Queries all products ordered by code in ascending order
     inv_res = supabase.table("inventario").select("*").order("codigo").execute()
     inv = inv_res.data if inv_res.data else []
 
-    # Consulta el historial de facturas con o sin filtro de búsqueda
     if buscar:
-        # Filtra por documento o nombre del cliente (búsqueda parcial, insensible a mayúsculas)
+        # Filtra por documento o nombre (búsqueda parcial, insensible a mayúsculas)
+        # Filters by document or name (partial search, case-insensitive)
         his_res = supabase.table("facturas").select("*")\
             .or_(f"cliente_documento.ilike.%{buscar}%,cliente_nombre.ilike.%{buscar}%")\
             .order("fecha", desc=True).execute()
     else:
-        # Sin búsqueda, trae las últimas 10 facturas ordenadas por fecha descendente
+        # Sin búsqueda: trae las últimas 10 facturas
+        # No search: fetches the last 10 invoices
         his_res = supabase.table("facturas").select("*").order("fecha", desc=True).limit(10).execute()
 
     his = his_res.data if his_res.data else []
 
-    # Calcula el total del carrito sumando el campo 'total' de cada ítem
+    # Suma el campo 'total' de cada ítem del carrito
+    # Sums the 'total' field from each item in the cart
     total = sum(item['total'] for item in session['carrito'])
 
     return render_template_string(
@@ -301,81 +345,98 @@ def index():
 
 
 # ==============================
-# INVENTARIO
+# INVENTARIO / INVENTORY
 # ==============================
 @app.route("/inventario/guardar", methods=["POST"])
 def inv_guardar():
     """
     Recibe los datos del formulario de inventario y los guarda en Supabase.
+    Receives inventory form data and saves it to Supabase.
 
-    Proceso:
-    - Extrae los campos del formulario (codigo, producto, precio, stock, tipo).
-    - Estandariza el nombre del producto a MAYÚSCULAS.
-    - Construye un diccionario con todos los atributos del producto,
-    -  incluyendo 'disponible' (booleano) y 'fecha_registro' (fecha actual).
+    Proceso / Process:
+    - Extrae los campos del formulario / Extracts form fields.
+    - Estandariza el nombre del producto a MAYÚSCULAS / Standardizes product name to UPPERCASE.
+    - Construye un diccionario con todos los atributos del producto.
+    -  Builds a dictionary with all product attributes.
+    - 'disponible' es un booleano derivado del stock / 'disponible' is a boolean derived from stock.
     - Imprime el registro como lista (evidencia de uso de listas).
-    - Usa upsert para insertar o actualizar si el código ya existe.
-    - Redirige al index al finalizar.
+    -  Prints the record as a list (evidence of list usage).
+    - Usa upsert: inserta o actualiza si el código ya existe.
+    -  Uses upsert: inserts or updates if the code already exists.
     - En caso de error, retorna el mensaje de excepción.
+    -  On error, returns the exception message.
     """
     try:
         c = request.form
 
-        # Limpia y convierte el nombre del producto a mayúsculas
+        # Limpia y convierte el nombre del producto a MAYÚSCULAS
+        # Cleans and converts the product name to UPPERCASE
         prod_limpio = estandarizar_dato(c['producto'], mayusculas=True)
 
-        # RETO AVANCE 7: Cada registro ahora es un objeto (diccionario) con atributos múltiples
+        # RETO AVANCE 7 / ADVANCE CHALLENGE 7:
+        # Cada registro es un objeto (diccionario) con atributos múltiples
+        # Each record is an object (dictionary) with multiple attributes
         datos = {
-            "codigo": int(c['codigo']),          # Integer
-            "producto": prod_limpio,             # String (estandarizado)
-            "precio": float(c['precio']),        # Float
-            "stock": float(c['stock']),          # Float
-            "tipo": c['tipo'],                   # String (Kilo / Unidad)
-            "disponible": float(c['stock']) > 0, # Boolean: True si stock > 0
-            "fecha_registro": datetime.now().strftime('%Y-%m-%d')  # Fecha actual formateada
+            "codigo": int(c['codigo']),          # Entero / Integer
+            "producto": prod_limpio,             # Cadena estandarizada / Standardized string
+            "precio": float(c['precio']),        # Decimal / Float
+            "stock": float(c['stock']),          # Decimal / Float
+            "tipo": c['tipo'],                   # Kilo / Unidad (Unit)
+            "disponible": float(c['stock']) > 0, # Booleano: True si stock > 0 / Boolean: True if stock > 0
+            "fecha_registro": datetime.now().strftime('%Y-%m-%d')  # Fecha actual / Current date
         }
 
-        # 🔥 USO DE LISTA (EVIDENCIA) - NO SE BORRA
-        # Crea una lista con los datos principales para trazabilidad en consola
+        # 🔥 USO DE LISTA (EVIDENCIA / LIST USAGE EVIDENCE) - NO SE BORRA / DO NOT REMOVE
+        # Lista con datos principales para trazabilidad en consola
+        # List with main data for console traceability
         registro_lista = [datos['codigo'], datos['producto'], datos['stock']]
-        print("Registro en lista:", registro_lista)
+        print("Registro en lista / Record as list:", registro_lista)
 
-        # Inserta o actualiza el producto en la tabla "inventario" de Supabase
+        # Inserta o actualiza el producto en Supabase
+        # Inserts or updates the product in Supabase
         supabase.table("inventario").upsert(datos).execute()
         return redirect("/")
 
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"Error / Error: {str(e)}"
 
 
 # ==============================
-# ✅ ACTUALIZACIÓN DE DATOS (NUEVO RETO AVANCE 7)
+# ✅ ACTUALIZACIÓN DE DATOS / DATA UPDATE (NUEVO RETO AVANCE 7 / NEW ADVANCE CHALLENGE 7)
 # ==============================
 @app.route("/inventario/actualizar_precio", methods=["POST"])
 def actualizar_precio_por_llave():
     """
     Actualiza el precio de un producto buscándolo por su código (llave primaria).
-    Mensajes de confirmación en Inglés y Español.
+    Updates the price of a product by searching with its code (primary key).
 
-    Proceso:
-    - Recibe el código del producto y el nuevo precio del formulario.
-    - Ejecuta un UPDATE en Supabase filtrando por el código (eq).
-    - Si encuentra y actualiza el registro, imprime mensaje de éxito.
-    - Si no encuentra el código, imprime mensaje de advertencia.
-    - En cualquier caso (éxito o error), redirige al index.
+    Mensajes en Inglés y Español / Messages in English and Spanish.
+
+    Proceso / Process:
+    - Recibe el código y el nuevo precio del formulario.
+    -  Receives the product code and new price from the form.
+    - Ejecuta UPDATE en Supabase filtrando por código (eq).
+    -  Executes UPDATE in Supabase filtering by code (eq).
+    - Si encuentra el registro, imprime mensaje de éxito.
+    -  If record is found, prints success message.
+    - Si no lo encuentra, imprime mensaje de advertencia.
+    -  If not found, prints warning message.
+    - En cualquier caso redirige al index.
+    -  In any case, redirects to index.
     """
     try:
         cod = int(request.form.get("codigo"))
         nuevo_p = float(request.form.get("nuevo_precio"))
 
-        # Actualiza el campo 'precio' del producto que coincida con el código
+        # Actualiza el precio del producto que coincida con el código
+        # Updates the price of the product matching the given code
         res = supabase.table("inventario").update({"precio": nuevo_p}).eq("codigo", cod).execute()
 
         if res.data:
             print(f"SUCCESS: Product {cod} updated / Producto {cod} actualizado")
         else:
             print(f"NOT FOUND: Search key {cod} invalid / Llave de búsqueda {cod} no válida")
-        
+
         return redirect("/")
     except Exception as e:
         print(f"ERROR: Update failed / Fallo en actualización: {str(e)}")
@@ -386,65 +447,78 @@ def actualizar_precio_por_llave():
 def inv_eliminar(codigo):
     """
     Elimina un producto del inventario por su código.
+    Deletes a product from the inventory by its code.
 
-    Parámetro de URL:
-        codigo (int): Código único del producto a eliminar.
+    Parámetro de URL / URL Parameter:
+        codigo (int): Código único del producto / Unique product code.
 
-    Proceso:
-    - Ejecuta un DELETE en Supabase filtrando por el código recibido en la URL.
-    - Redirige al index al finalizar.
+    Proceso / Process:
+    - Ejecuta DELETE en Supabase filtrando por el código.
+    -  Executes DELETE in Supabase filtering by the given code.
+    - Redirige al index al finalizar / Redirects to index when done.
     """
     supabase.table("inventario").delete().eq("codigo", codigo).execute()
     return redirect("/")
 
 
 # ==============================
-# 🛒 CARRITO (MEJORADO PRO)
+# 🛒 CARRITO / CART (MEJORADO PRO / PRO IMPROVED)
 # ==============================
 @app.route("/carrito/agregar", methods=["POST"])
 def car_agregar():
     """
-    Agrega un producto al carrito de compras de la sesión actual.
+    Agrega un producto al carrito de compras de la sesión.
+    Adds a product to the session shopping cart.
 
-    Proceso:
-    - Recibe el código del producto y la cantidad del formulario.
+    Proceso / Process:
+    - Recibe código y cantidad del formulario / Receives code and quantity from form.
     - Valida que la cantidad sea un número positivo válido.
-    - Consulta el producto en Supabase por su código.
-    - Verifica que el producto exista y que haya stock suficiente.
-    - Si el producto ya está en el carrito, suma la cantidad y recalcula el total.
-    - Si no está, lo agrega como nuevo ítem con todos sus datos.
-    - Guarda el carrito actualizado en la sesión y redirige al index.
+    -  Validates that the quantity is a valid positive number.
+    - Consulta el producto en Supabase por código.
+    -  Queries the product in Supabase by code.
+    - Verifica existencia y stock suficiente.
+    -  Verifies product existence and sufficient stock.
+    - Si el producto ya está en el carrito: suma cantidad y recalcula total.
+    -  If product already in cart: adds quantity and recalculates total.
+    - Si no está: lo agrega como nuevo ítem al carrito.
+    -  If not in cart: appends it as a new item.
+    - Guarda el carrito en sesión y redirige al index.
+    -  Saves the cart in session and redirects to index.
     """
     cod = request.form.get("codigo_vta")
 
     try:
         cant = float(request.form.get("cantidad", 0))
-        if cant <= 0:          # Rechaza cantidades cero o negativas
+        if cant <= 0:          # Rechaza cantidades inválidas / Rejects invalid quantities
             return redirect("/")
     except:
-        return redirect("/")   # Rechaza valores no numéricos
+        return redirect("/")   # Rechaza valores no numéricos / Rejects non-numeric values
 
     # Busca el producto en el inventario por código
+    # Queries the product from inventory by code
     res = supabase.table("inventario").select("*").eq("codigo", cod).execute()
     p = res.data[0] if res.data else None
 
     # Valida existencia del producto y disponibilidad de stock
+    # Validates product existence and stock availability
     if not p or float(p['stock']) < cant:
         return redirect("/")
 
     carrito = session.get('carrito', [])
 
-    # 🔥 EVITAR DUPLICADOS (LISTA + FOR)
-    # Recorre el carrito; si el producto ya existe, actualiza cantidad y total
+    # 🔥 EVITAR DUPLICADOS (LISTA + FOR / LIST + FOR LOOP)
+    # Recorre el carrito; si el producto existe, actualiza cantidad y total
+    # Iterates the cart; if product exists, updates quantity and total
     existe = False
     for item in carrito:
         if item['codigo'] == cod:
             item['cantidad'] += cant
             item['total'] = round(item['cantidad'] * float(p['precio']), 2)
             existe = True
-            break  # Sale del ciclo al encontrar el producto
+            break  # Sale del ciclo al encontrar el producto / Exits loop when product is found
 
-    # Si el producto no estaba en el carrito, lo agrega como nuevo ítem
+    # Si no estaba en el carrito, lo agrega como nuevo ítem
+    # If not already in cart, appends it as a new item
     if not existe:
         carrito.append({
             "codigo": cod,
@@ -454,51 +528,63 @@ def car_agregar():
             "tipo": p['tipo']
         })
 
-    # Guarda el carrito modificado en la sesión
+    # Guarda el carrito actualizado en la sesión
+    # Saves the updated cart to the session
     session['carrito'] = carrito
     return redirect("/")
 
 
 # ==============================
-# CLIENTE
+# CLIENTE / CLIENT
 # ==============================
 @app.route("/cliente/actualizar", methods=["POST"])
 def cli_upd():
     """
     Actualiza los datos del cliente activo en la sesión.
+    Updates the active client's data in the session.
 
-    Proceso:
-    - Estandariza el nombre (MAYÚSCULAS) y documento (minúsculas) recibidos del formulario.
-    - Busca el cliente en la tabla "clientes" de Supabase por su cédula.
-    - Si el cliente existe en la BD: carga sus datos reales y marca es_frecuente=True.
-    - Si no existe: crea un objeto nuevo con los datos del formulario y es_frecuente=False.
-    - En ambos casos, guarda el objeto cliente en la sesión y redirige al index.
+    Proceso / Process:
+    - Estandariza nombre (MAYÚSCULAS) y documento (minúsculas) del formulario.
+    -  Standardizes name (UPPERCASE) and document (lowercase) from form.
+    - Busca el cliente en Supabase por cédula.
+    -  Searches the client in Supabase by ID number.
+    - Si existe: carga datos reales y marca es_frecuente=True.
+    -  If found: loads real data and sets es_frecuente=True.
+    - Si no existe: crea objeto nuevo con datos del formulario.
+    -  If not found: creates new object with form data.
+    - Guarda el cliente en sesión y redirige al index.
+    - Saves client to session and redirects to index.
 
-    Nota: Las líneas comentadas muestran la implementación anterior simple,
-    reemplazada por la búsqueda real en Supabase.
+    Nota / Note:
+    Las líneas comentadas muestran la implementación anterior simple.
+    Commented lines show the previous simple implementation.
     """
     # nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
     # doc_cli = estandarizar_dato(request.form.get("documento"))
     # (Comentamos lo anterior para implementar la búsqueda real en Supabase)
+    # (Commented out to implement real Supabase lookup)
 
     nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
     doc_cli = estandarizar_dato(request.form.get("documento"))
 
-    # Busca el cliente en Supabase usando la cédula como llave de búsqueda
+    # Busca el cliente en Supabase por cédula (llave de búsqueda)
+    # Searches for the client in Supabase by ID number (search key)
     res = supabase.table("clientes").select("*").eq("cedula", doc_cli).execute()
-    
+
     if res.data:
         # Cliente encontrado: carga sus datos desde la base de datos
+        # Client found: loads their data from the database
         c_db = res.data[0]
         session['cliente'] = {
             "nombre": c_db['nombre'],
             "documento": c_db['cedula'],
-            "puntos": c_db.get('puntos', 0),  # Usa 0 si el campo no existe
-            "es_frecuente": True               # Marcado como cliente frecuente
+            "puntos": c_db.get('puntos', 0),  # Usa 0 si el campo no existe / Defaults to 0 if field missing
+            "es_frecuente": True               # Cliente frecuente confirmado / Confirmed frequent client
         }
         print("CLIENT DATA RETRIEVED / DATOS DE CLIENTE RECUPERADOS")
     else:
         # Cliente no encontrado: crea objeto nuevo con datos del formulario
+        # Client not found: creates new object with form data
         session['cliente'] = {
             "nombre": nom_cli,
             "documento": doc_cli,
@@ -511,24 +597,27 @@ def cli_upd():
 
 
 # ==============================
-# LIMPIAR CARRITO
+# LIMPIAR CARRITO / CLEAR CART
 # ==============================
 @app.route("/carrito/limpiar")
 def car_limpiar():
     """
-    Vacía completamente el carrito de compras de la sesión actual.
+    Vacía completamente el carrito de compras de la sesión.
+    Completely clears the shopping cart from the session.
 
-    Proceso:
-    - Asigna una lista vacía al carrito en la sesión.
+    Proceso / Process:
+    - Asigna una lista vacía al carrito en sesión.
+    -  Assigns an empty list to the cart in session.
     - Redirige al index para refrescar la vista.
+    - Redirects to index to refresh the view.
     """
     session['carrito'] = []
     return redirect("/")
 
 
 # ==============================
-# RUN
+# RUN / EJECUCIÓN
 # ==============================
 if __name__ == "__main__":
-    simulador_memoria()  # 🔥 PASO 1 AUTOMÁTICO: ejecuta el simulador al arrancar
-    app.run(debug=True)  # Inicia el servidor Flask en modo debug (recarga automática en cambios)
+    simulador_memoria()  # 🔥 PASO 1 AUTOMÁTICO / AUTOMATIC STEP 1: ejecuta el simulador / runs the simulator
+    app.run(debug=True)  # Inicia servidor Flask en modo debug / Starts Flask server in debug mode
