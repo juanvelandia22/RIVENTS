@@ -1,36 +1,54 @@
-from flask import Flask, render_template_string, request, redirect, session, send_file, url_for, jsonify
-from supabase import create_client, Client
-from datetime import datetime
-import os
-from fpdf import FPDF
-import io
+# ============================================================
+# SISTEMA DE FACTURACIÓN - POLLO Y CHARCUTERÍA RAÚL
+# Framework: Flask (Python) | Base de datos: Supabase
+# Generación de PDF: fpdf | Sesiones: Flask Session
+# ============================================================
 
+from flask import Flask, render_template_string, request, redirect, session, send_file, url_for, jsonify
+from supabase import create_client, Client  # Cliente oficial de Supabase para Python
+from datetime import datetime               # Para registrar fechas y horas
+import os                                  # Para variables de entorno del sistema operativo
+from fpdf import FPDF                      # Para generar archivos PDF
+import io                                  # Para manejar flujos de datos en memoria (sin guardar archivos físicos)
+
+# ------------------------------------------------------------
+# INICIALIZACIÓN DE LA APLICACIÓN FLASK
+# secret_key: llave para firmar y cifrar las cookies de sesión
+# ------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = 'pollo_raul_secret_key'
+
 
 # ==============================
 # ✅ PASO 1: SIMULADOR DE MEMORIA
 # ==============================
+# Lista global que representa los componentes iniciales en "memoria"
+# Se usa como base para demostrar operaciones sobre listas en Python
 memoria_test = ["CPU", "RAM", "DISCO"]
 
 def simulador_memoria():
+    """
+    Función didáctica que simula operaciones básicas sobre listas (memoria volátil).
+    Se ejecuta automáticamente al iniciar la aplicación.
+    Demuestra: copia, append, insert, remove, pop, sort y búsqueda con 'in'.
+    """
     print("\n=== SIMULADOR DE MEMORIA VOLÁTIL ===")
 
-    lista = memoria_test.copy()
+    lista = memoria_test.copy()        # Copia la lista original para no modificarla
     print("1. Inicial:", lista)
 
-    lista.append("MONITOR")
-    lista.insert(1, "TECLADO")
+    lista.append("MONITOR")            # Agrega "MONITOR" al final
+    lista.insert(1, "TECLADO")         # Inserta "TECLADO" en la posición 1
     print("2. Expansión:", lista)
 
-    lista.remove("RAM")
-    lista.pop(2)
+    lista.remove("RAM")                # Elimina el primer elemento con valor "RAM"
+    lista.pop(2)                       # Elimina el elemento en el índice 2
     print("3. Depuración:", lista)
 
-    lista.sort()
+    lista.sort()                       # Ordena la lista alfabéticamente
     print("4. Ordenado:", lista)
 
-    if "CPU" in lista:
+    if "CPU" in lista:                 # Verifica si "CPU" existe en la lista
         print("5. CPU SI existe")
     else:
         print("5. CPU NO existe")
@@ -40,6 +58,20 @@ def simulador_memoria():
 # ✅ FUNCIÓN DE ESTANDARIZACIÓN
 # ==============================
 def estandarizar_dato(texto_entrada, mayusculas=False):
+    """
+    Limpia y estandariza un texto de entrada.
+    - Elimina espacios al inicio y al final (strip).
+    - Si mayusculas=True, convierte el texto a MAYÚSCULAS.
+    - Si mayusculas=False (por defecto), convierte a minúsculas.
+    - Retorna cadena vacía si el texto está vacío o es None.
+    
+    Parámetros:
+        texto_entrada (str): Texto a limpiar.
+        mayusculas (bool): Define si el resultado va en mayúsculas o minúsculas.
+    
+    Retorna:
+        str: Texto limpio y estandarizado.
+    """
     if not texto_entrada:
         return ""
     limpio = texto_entrada.strip()
@@ -49,26 +81,40 @@ def estandarizar_dato(texto_entrada, mayusculas=False):
 # ==============================
 # CONFIGURACIÓN
 # ==============================
+# Constantes globales del negocio, usadas en toda la aplicación
+# para mostrar encabezados en la interfaz y en los PDFs de factura
 NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 NIT_NEGOCIO = "123.456.789-0"
 DIRECCION = "Cúcuta, Norte de Santander"
 TELEFONO = "300 000 0000"
-VALOR_IVA = 0.19
+VALOR_IVA = 0.19   # IVA del 19% aplicado en cálculos de facturación
 
 
 # ==============================
 # SUPABASE
 # ==============================
+# Credenciales de conexión al proyecto en Supabase (base de datos en la nube)
+# URL_SUPABASE: Endpoint del proyecto
+# KEY_SUPABASE: Llave pública anónima (anon key) para autenticación
 URL_SUPABASE = "https://paulpnqsfytnpbbitquo.supabase.co"
 KEY_SUPABASE = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdWxwbnFzZnl0bnBiYml0cXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNzg2NTIsImV4cCI6MjA4OTg1NDY1Mn0.ts4H83Yba2J8id7-evY-Q2ayFHMluBXjfJVyiZFWtig"
 
+# Se crea la instancia del cliente Supabase para usar en todas las rutas
 supabase: Client = create_client(URL_SUPABASE, KEY_SUPABASE)
 
 
 # ==============================
 # HTML (NO SE TOCA - MANTENIDO IGUAL)
 # ==============================
-HTML_SISTEMA = """
+# Plantilla HTML completa renderizada con Jinja2 desde Flask.
+# Contiene toda la interfaz del sistema:
+#   - Encabezado del negocio
+#   - Formulario y tabla de Inventario
+#   - Módulo de Venta Rápida con carrito y datos del cliente
+#   - Historial de facturas con buscador
+# Los valores dinámicos se inyectan con {{ variable }} de Jinja2
+
+HTML_SISTEMA ="""
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -184,7 +230,7 @@ HTML_SISTEMA = """
     </div>
 </body>
 </html>
- """
+"""
 
 
 # ==============================
@@ -192,6 +238,20 @@ HTML_SISTEMA = """
 # ==============================
 @app.route("/")
 def index():
+    """
+    Ruta principal del sistema. Carga y renderiza la interfaz completa.
+
+    Comportamiento:
+    - Inicializa el carrito de compras en sesión si no existe.
+    - Inicializa el objeto cliente en sesión con valores por defecto si no existe.
+    - El cliente tiene 4 atributos: nombre (str), documento (str),
+    - puntos (int) y es_frecuente (bool).
+    - Permite buscar facturas por cédula o nombre del cliente.
+    - Consulta el inventario completo ordenado por código.
+    - Si hay búsqueda activa, filtra las facturas; si no, carga las últimas 10.
+    - Calcula el total del carrito sumando los totales de cada ítem.
+    - Renderiza la plantilla HTML con todos los datos necesarios.
+    """
     if 'carrito' not in session:
         session['carrito'] = []
 
@@ -204,19 +264,26 @@ def index():
             "es_frecuente": False    # Atributo Boolean
         }
 
+    # Limpia y estandariza el parámetro de búsqueda de la URL (?buscar=...)
     buscar = estandarizar_dato(request.args.get('buscar', '')).strip()
 
+    # Consulta todos los productos del inventario ordenados por código ascendente
     inv_res = supabase.table("inventario").select("*").order("codigo").execute()
     inv = inv_res.data if inv_res.data else []
 
+    # Consulta el historial de facturas con o sin filtro de búsqueda
     if buscar:
+        # Filtra por documento o nombre del cliente (búsqueda parcial, insensible a mayúsculas)
         his_res = supabase.table("facturas").select("*")\
             .or_(f"cliente_documento.ilike.%{buscar}%,cliente_nombre.ilike.%{buscar}%")\
             .order("fecha", desc=True).execute()
     else:
+        # Sin búsqueda, trae las últimas 10 facturas ordenadas por fecha descendente
         his_res = supabase.table("facturas").select("*").order("fecha", desc=True).limit(10).execute()
 
     his = his_res.data if his_res.data else []
+
+    # Calcula el total del carrito sumando el campo 'total' de cada ítem
     total = sum(item['total'] for item in session['carrito'])
 
     return render_template_string(
@@ -238,26 +305,42 @@ def index():
 # ==============================
 @app.route("/inventario/guardar", methods=["POST"])
 def inv_guardar():
+    """
+    Recibe los datos del formulario de inventario y los guarda en Supabase.
+
+    Proceso:
+    - Extrae los campos del formulario (codigo, producto, precio, stock, tipo).
+    - Estandariza el nombre del producto a MAYÚSCULAS.
+    - Construye un diccionario con todos los atributos del producto,
+    -  incluyendo 'disponible' (booleano) y 'fecha_registro' (fecha actual).
+    - Imprime el registro como lista (evidencia de uso de listas).
+    - Usa upsert para insertar o actualizar si el código ya existe.
+    - Redirige al index al finalizar.
+    - En caso de error, retorna el mensaje de excepción.
+    """
     try:
         c = request.form
 
+        # Limpia y convierte el nombre del producto a mayúsculas
         prod_limpio = estandarizar_dato(c['producto'], mayusculas=True)
 
         # RETO AVANCE 7: Cada registro ahora es un objeto (diccionario) con atributos múltiples
         datos = {
-            "codigo": int(c['codigo']),         # Integer
-            "producto": prod_limpio,            # String
-            "precio": float(c['precio']),       # Float
-            "stock": float(c['stock']),         # Float
-            "tipo": c['tipo'],                  # String
-            "disponible": float(c['stock']) > 0, # Boolean (Requerimiento técnico)
-            "fecha_registro": datetime.now().strftime('%Y-%m-%d')
+            "codigo": int(c['codigo']),          # Integer
+            "producto": prod_limpio,             # String (estandarizado)
+            "precio": float(c['precio']),        # Float
+            "stock": float(c['stock']),          # Float
+            "tipo": c['tipo'],                   # String (Kilo / Unidad)
+            "disponible": float(c['stock']) > 0, # Boolean: True si stock > 0
+            "fecha_registro": datetime.now().strftime('%Y-%m-%d')  # Fecha actual formateada
         }
 
         # 🔥 USO DE LISTA (EVIDENCIA) - NO SE BORRA
+        # Crea una lista con los datos principales para trazabilidad en consola
         registro_lista = [datos['codigo'], datos['producto'], datos['stock']]
         print("Registro en lista:", registro_lista)
 
+        # Inserta o actualiza el producto en la tabla "inventario" de Supabase
         supabase.table("inventario").upsert(datos).execute()
         return redirect("/")
 
@@ -271,14 +354,21 @@ def inv_guardar():
 @app.route("/inventario/actualizar_precio", methods=["POST"])
 def actualizar_precio_por_llave():
     """
-    Busca por la llave (código) y actualiza el precio.
-    Mensajes en Inglés y Español.
+    Actualiza el precio de un producto buscándolo por su código (llave primaria).
+    Mensajes de confirmación en Inglés y Español.
+
+    Proceso:
+    - Recibe el código del producto y el nuevo precio del formulario.
+    - Ejecuta un UPDATE en Supabase filtrando por el código (eq).
+    - Si encuentra y actualiza el registro, imprime mensaje de éxito.
+    - Si no encuentra el código, imprime mensaje de advertencia.
+    - En cualquier caso (éxito o error), redirige al index.
     """
     try:
         cod = int(request.form.get("codigo"))
         nuevo_p = float(request.form.get("nuevo_precio"))
 
-        # Actualizamos en Supabase buscando por la llave
+        # Actualiza el campo 'precio' del producto que coincida con el código
         res = supabase.table("inventario").update({"precio": nuevo_p}).eq("codigo", cod).execute()
 
         if res.data:
@@ -294,6 +384,16 @@ def actualizar_precio_por_llave():
 
 @app.route("/inventario/eliminar/<int:codigo>")
 def inv_eliminar(codigo):
+    """
+    Elimina un producto del inventario por su código.
+
+    Parámetro de URL:
+        codigo (int): Código único del producto a eliminar.
+
+    Proceso:
+    - Ejecuta un DELETE en Supabase filtrando por el código recibido en la URL.
+    - Redirige al index al finalizar.
+    """
     supabase.table("inventario").delete().eq("codigo", codigo).execute()
     return redirect("/")
 
@@ -303,32 +403,48 @@ def inv_eliminar(codigo):
 # ==============================
 @app.route("/carrito/agregar", methods=["POST"])
 def car_agregar():
+    """
+    Agrega un producto al carrito de compras de la sesión actual.
+
+    Proceso:
+    - Recibe el código del producto y la cantidad del formulario.
+    - Valida que la cantidad sea un número positivo válido.
+    - Consulta el producto en Supabase por su código.
+    - Verifica que el producto exista y que haya stock suficiente.
+    - Si el producto ya está en el carrito, suma la cantidad y recalcula el total.
+    - Si no está, lo agrega como nuevo ítem con todos sus datos.
+    - Guarda el carrito actualizado en la sesión y redirige al index.
+    """
     cod = request.form.get("codigo_vta")
 
     try:
         cant = float(request.form.get("cantidad", 0))
-        if cant <= 0:
+        if cant <= 0:          # Rechaza cantidades cero o negativas
             return redirect("/")
     except:
-        return redirect("/")
+        return redirect("/")   # Rechaza valores no numéricos
 
+    # Busca el producto en el inventario por código
     res = supabase.table("inventario").select("*").eq("codigo", cod).execute()
     p = res.data[0] if res.data else None
 
+    # Valida existencia del producto y disponibilidad de stock
     if not p or float(p['stock']) < cant:
         return redirect("/")
 
     carrito = session.get('carrito', [])
 
     # 🔥 EVITAR DUPLICADOS (LISTA + FOR)
+    # Recorre el carrito; si el producto ya existe, actualiza cantidad y total
     existe = False
     for item in carrito:
         if item['codigo'] == cod:
             item['cantidad'] += cant
             item['total'] = round(item['cantidad'] * float(p['precio']), 2)
             existe = True
-            break
+            break  # Sale del ciclo al encontrar el producto
 
+    # Si el producto no estaba en el carrito, lo agrega como nuevo ítem
     if not existe:
         carrito.append({
             "codigo": cod,
@@ -338,6 +454,7 @@ def car_agregar():
             "tipo": p['tipo']
         })
 
+    # Guarda el carrito modificado en la sesión
     session['carrito'] = carrito
     return redirect("/")
 
@@ -347,6 +464,19 @@ def car_agregar():
 # ==============================
 @app.route("/cliente/actualizar", methods=["POST"])
 def cli_upd():
+    """
+    Actualiza los datos del cliente activo en la sesión.
+
+    Proceso:
+    - Estandariza el nombre (MAYÚSCULAS) y documento (minúsculas) recibidos del formulario.
+    - Busca el cliente en la tabla "clientes" de Supabase por su cédula.
+    - Si el cliente existe en la BD: carga sus datos reales y marca es_frecuente=True.
+    - Si no existe: crea un objeto nuevo con los datos del formulario y es_frecuente=False.
+    - En ambos casos, guarda el objeto cliente en la sesión y redirige al index.
+
+    Nota: Las líneas comentadas muestran la implementación anterior simple,
+    reemplazada por la búsqueda real en Supabase.
+    """
     # nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
     # doc_cli = estandarizar_dato(request.form.get("documento"))
     # (Comentamos lo anterior para implementar la búsqueda real en Supabase)
@@ -354,21 +484,21 @@ def cli_upd():
     nom_cli = estandarizar_dato(request.form.get("nombre"), mayusculas=True)
     doc_cli = estandarizar_dato(request.form.get("documento"))
 
-    # Intentamos buscar el cliente en la base de datos para "colocar los datos"
+    # Busca el cliente en Supabase usando la cédula como llave de búsqueda
     res = supabase.table("clientes").select("*").eq("cedula", doc_cli).execute()
     
     if res.data:
-        # Si existe, lo cargamos como objeto (diccionario)
+        # Cliente encontrado: carga sus datos desde la base de datos
         c_db = res.data[0]
         session['cliente'] = {
             "nombre": c_db['nombre'],
             "documento": c_db['cedula'],
-            "puntos": c_db.get('puntos', 0),
-            "es_frecuente": True
+            "puntos": c_db.get('puntos', 0),  # Usa 0 si el campo no existe
+            "es_frecuente": True               # Marcado como cliente frecuente
         }
         print("CLIENT DATA RETRIEVED / DATOS DE CLIENTE RECUPERADOS")
     else:
-        # Si no existe, creamos el objeto nuevo
+        # Cliente no encontrado: crea objeto nuevo con datos del formulario
         session['cliente'] = {
             "nombre": nom_cli,
             "documento": doc_cli,
@@ -385,6 +515,13 @@ def cli_upd():
 # ==============================
 @app.route("/carrito/limpiar")
 def car_limpiar():
+    """
+    Vacía completamente el carrito de compras de la sesión actual.
+
+    Proceso:
+    - Asigna una lista vacía al carrito en la sesión.
+    - Redirige al index para refrescar la vista.
+    """
     session['carrito'] = []
     return redirect("/")
 
@@ -393,5 +530,5 @@ def car_limpiar():
 # RUN
 # ==============================
 if __name__ == "__main__":
-    simulador_memoria()  # 🔥 PASO 1 AUTOMÁTICO
-    app.run(debug=True)
+    simulador_memoria()  # 🔥 PASO 1 AUTOMÁTICO: ejecuta el simulador al arrancar
+    app.run(debug=True)  # Inicia el servidor Flask en modo debug (recarga automática en cambios)
