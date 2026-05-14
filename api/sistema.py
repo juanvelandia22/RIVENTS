@@ -299,7 +299,7 @@ def index():
         # Advance Challenge 7: Client is a dictionary object with more than 3 attributes
         session['cliente'] = {
             "nombre": "Consumidor Final",
-            "documento": "222222222222",
+            "documento": "222222222",
             "puntos": 0,             # Atributo entero / Integer attribute
             "es_frecuente": False     # Atributo booleano / Boolean attribute
         }
