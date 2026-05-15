@@ -17,7 +17,27 @@ import io                                  # Flujos de datos en memoria / In-mem
 # --- INICIO PERSISTENCIA MVP AVANCE 8 ---
 import csv
 import os
+# --- TAD: ABSTRACT DATA TYPE / TIPO DE DATO ABSTRACTO ---
+# ESP: Clase que representa la entidad principal del sistema.
+# ENG: Class representing the main entity of the system.
+class Producto:
+    def __init__(self, codigo, nombre, precio, categoria):
+        # ESP: Inicializa el objeto con sus atributos principales.
+        # ENG: Initializes the object with its main attributes.
+        self.codigo = int(codigo)
+        self.nombre = nombre.upper()
+        self.precio = float(precio)
+        self.categoria = categoria
 
+    def to_dict(self):
+        # ESP: Abstracción: El objeto sabe cómo convertirse a diccionario.
+        # ENG: Abstraction: The object knows how to convert itself into a dictionary.
+        return {
+            "codigo": self.codigo,
+            "producto": self.nombre,
+            "precio": self.precio,
+            "categoria": self.categoria
+        }
 ARCHIVO_PERSISTENCIA = "datos_rivents.csv"
 
 def cargar_datos_csv():
@@ -45,6 +65,21 @@ def guardar_datos_csv(lista_datos):
         writer.writerows(lista_datos)
     print("Datos vaciados al buffer y guardados en disco correctamente.")
 # --- FIN PERSISTENCIA MVP AVANCE 8 ---
+# --- LOGICA DE APAREO / DATA PAIRING LOGIC ---
+def obtener_nombre_categoria(id_buscado):
+    # ESP: Capa de acceso a datos: Separa la lectura del archivo de la lógica principal.
+    # ENG: Data access layer: Separates file reading from the main logic.
+    try:
+        # ESP: Implementa apareo cruzando el ID con el nombre descriptivo.
+        # ENG: Implements pairing by crossing the ID with the descriptive name.
+        with open("api/categorias.csv", mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for fila in reader:
+                if fila['id'] == str(id_buscado):
+                    return fila['nombre_cat']
+        return "General"
+    except FileNotFoundError:
+        return "Sin Categoría"
 # ------------------------------------------------------------
 # INICIALIZACIÓN DE LA APLICACIÓN FLASK
 # FLASK APPLICATION INITIALIZATION
@@ -381,39 +416,51 @@ def index():
 @app.route("/inventario/guardar", methods=["POST"])
 def inv_guardar():
     """
-    Recibe los datos del formulario de inventario y los guarda en Supabase.
-    Receives inventory form data and saves it to Supabase.
-
-    Proceso / Process:
-    - Extrae los campos del formulario / Extracts form fields.
-    - Estandariza el nombre del producto a MAYÚSCULAS / Standardizes product name to UPPERCASE.
-    - Construye un diccionario con todos los atributos del producto.
-    -  Builds a dictionary with all product attributes.
-    - 'disponible' es un booleano derivado del stock / 'disponible' is a boolean derived from stock.
-    - Imprime el registro como lista (evidencia de uso de listas).
-    -  Prints the record as a list (evidence of list usage).
-    - Usa upsert: inserta o actualiza si el código ya existe.
-    -  Uses upsert: inserts or updates if the code already exists.
-    - En caso de error, retorna el mensaje de excepción.
-    -  On error, returns the exception message.
+    ESP: Procesa el formulario de inventario usando TAD, Apareo y Abstracción.
+    ENG: Processes the inventory form using ADT, Pairing, and Abstraction.
     """
-# --- RESPALDO EN HARDWARE ---
-    res = supabase.table("inventario").select("*").execute()
-    backup_local_csv(res.data) 
-    return redirect("/")
-def backup_local_csv(datos):
-    """Guarda una copia de seguridad en hardware."""
     try:
-        if not datos:
-            return
-        # 'with open' asegura que los datos se escriban físicamente en el disco
-        with open("respaldo_inventario.csv", mode='w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=datos[0].keys())
-            writer.writeheader()
-            writer.writerows(datos)
-            print(">>> ÉXITO: Datos guardados en hardware correctamente.")
+        # Recuperamos los datos del formulario de Flask
+        c = request.form
+        
+        # --- 1. LOGICA DE APAREO / PAIRING LOGIC ---
+        # ESP: Cruza el ID del formulario con el archivo 'categorias.csv' para validar la categoría.
+        # ENG: Crosses the form ID with the 'categorias.csv' file to validate the category.
+        id_cat = c.get('categoria_id', '1') 
+        nombre_cat = obtener_nombre_categoria(id_cat)
+
+        # --- 2. TAD: TIPO DE DATO ABSTRACTO / ADT: ABSTRACT DATA TYPE ---
+        # ESP: Encapsula los datos en un objeto 'Producto' garantizando integridad.
+        # ENG: Encapsulates data into a 'Product' object ensuring integrity.
+        nuevo_prod = Producto(
+            codigo=c['codigo'],
+            nombre=c['producto'],
+            precio=c['precio'],
+            categoria=nombre_cat
+        )
+        
+        # --- 3. CAPA DE ABSTRACCIÓN / ABSTRACTION LAYER ---
+        # ESP: El objeto se transforma en diccionario para ser compatible con Supabase.
+        # ENG: The object transforms into a dictionary to be compatible with Supabase.
+        datos_preparados = nuevo_prod.to_dict()
+        
+        # Campos de stock y tipo (lógica de negocio adicional)
+        datos_preparados["stock"] = float(c.get('stock', 0))
+        datos_preparados["tipo"] = c.get('tipo', 'Und')
+        
+        # Guardado en la base de datos en la nube (Supabase)
+        supabase.table("inventario").upsert(datos_preparados).execute()
+
+        # --- 4. RESPALDO EN HARDWARE (PERSISTENCIA LOCAL) ---
+        # ESP: Sincroniza la base de datos con un archivo físico CSV local.
+        # ENG: Synchronizes the database with a local physical CSV file.
+        res = supabase.table("inventario").select("*").execute()
+        backup_local_csv(res.data)
+        
+        return redirect("/")
     except Exception as e:
-        print(f">>> ERROR DE PERSISTENCIA: {e}")
+        print(f"Error en inv_guardar: {e}")
+        return redirect("/")
 
 
 
@@ -636,7 +683,39 @@ def car_limpiar():
     session['carrito'] = []
     return redirect("/")
 
+# --- LOGICA DE REPORTE: CORTE DE CONTROL ---
+def generar_reporte_agrupado(lista_datos):
+    """
+    ESP: Genera un reporte sumando precios por categoría (Corte de Control).
+    ENG: Generates a report totaling prices by category (Control Break).
+    """
+    # Es obligatorio ordenar por el campo de control (categoría)
+    datos_ordenados = sorted(lista_datos, key=lambda x: x['categoria'])
+    
+    cat_actual = None
+    acumulado = 0
+    
+    print("\n" + "="*40)
+    print("REPORTE GRUPAL - CORTE DE CONTROL")
+    print("="*40)
 
+    for item in datos_ordenados:
+        # Detectamos el cambio de grupo (El "Corte")
+        if item['categoria'] != cat_actual:
+            if cat_actual is not None:
+                print(f"--- TOTAL {cat_actual}: ${acumulado:,.0f} ---")
+            
+            cat_actual = item['categoria']
+            acumulado = 0
+            print(f"\n[ CATEGORÍA: {cat_actual} ]")
+        
+        print(f" > {item['producto']}: ${float(item['precio']):,.0f}")
+        acumulado += float(item['precio'])
+    
+    # Mostrar último grupo
+    if cat_actual:
+        print(f"--- TOTAL {cat_actual}: ${acumulado:,.0f} ---")
+    print("="*40 + "\n")
 # ==============================
 # RUN / EJECUCIÓN
 # ==============================
