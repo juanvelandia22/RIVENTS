@@ -6,7 +6,7 @@
 # Generación de PDF / PDF Generation: fpdf
 # Sesiones / Sessions: Flask Session
 # ============================================================
-
+import csv
 from flask import Flask, render_template_string, request, redirect, session, send_file, url_for, jsonify
 from supabase import create_client, Client  # Cliente oficial de Supabase / Official Supabase client
 from datetime import datetime               # Para fechas y horas / For dates and times
@@ -14,6 +14,37 @@ import os                                  # Variables del sistema / System envi
 from fpdf import FPDF                      # Generación de PDFs / PDF generation
 import io                                  # Flujos de datos en memoria / In-memory data streams
 
+# --- INICIO PERSISTENCIA MVP AVANCE 8 ---
+import csv
+import os
+
+ARCHIVO_PERSISTENCIA = "datos_rivents.csv"
+
+def cargar_datos_csv():
+    """Carga inicial de datos desde el archivo al arrancar el sistema."""
+    datos = []
+    try:
+        # Validación robusta con with open para asegurar cierre de buffer
+        with open(ARCHIVO_PERSISTENCIA, mode='r', newline='', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                datos.append(dict(row))
+        print(f"Datos cargados exitosamente desde {ARCHIVO_PERSISTENCIA}")
+    except FileNotFoundError:
+        # Si el archivo no existe, no se detiene el programa
+        print("No se encontró archivo de persistencia, iniciando lista vacía.")
+    return datos
+
+def guardar_datos_csv(lista_datos):
+    """Guarda físicamente en el hardware usando with open."""
+    if not lista_datos:
+        return
+    with open(ARCHIVO_PERSISTENCIA, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=lista_datos[0].keys())
+        writer.writeheader()
+        writer.writerows(lista_datos)
+    print("Datos vaciados al buffer y guardados en disco correctamente.")
+# --- FIN PERSISTENCIA MVP AVANCE 8 ---
 # ------------------------------------------------------------
 # INICIALIZACIÓN DE LA APLICACIÓN FLASK
 # FLASK APPLICATION INITIALIZATION
@@ -366,39 +397,25 @@ def inv_guardar():
     - En caso de error, retorna el mensaje de excepción.
     -  On error, returns the exception message.
     """
+# --- RESPALDO EN HARDWARE ---
+    res = supabase.table("inventario").select("*").execute()
+    backup_local_csv(res.data) 
+    return redirect("/")
+def backup_local_csv(datos):
+    """Guarda una copia de seguridad en hardware."""
     try:
-        c = request.form
-
-        # Limpia y convierte el nombre del producto a MAYÚSCULAS
-        # Cleans and converts the product name to UPPERCASE
-        prod_limpio = estandarizar_dato(c['producto'], mayusculas=True)
-
-        # RETO AVANCE 7 / ADVANCE CHALLENGE 7:
-        # Cada registro es un objeto (diccionario) con atributos múltiples
-        # Each record is an object (dictionary) with multiple attributes
-        datos = {
-            "codigo": int(c['codigo']),          # Entero / Integer
-            "producto": prod_limpio,             # Cadena estandarizada / Standardized string
-            "precio": float(c['precio']),        # Decimal / Float
-            "stock": float(c['stock']),          # Decimal / Float
-            "tipo": c['tipo'],                   # Kilo / Unidad (Unit)
-            "disponible": float(c['stock']) > 0, # Booleano: True si stock > 0 / Boolean: True if stock > 0
-            "fecha_registro": datetime.now().strftime('%Y-%m-%d')  # Fecha actual / Current date
-        }
-
-        # 🔥 USO DE LISTA (EVIDENCIA / LIST USAGE EVIDENCE) - NO SE BORRA / DO NOT REMOVE
-        # Lista con datos principales para trazabilidad en consola
-        # List with main data for console traceability
-        registro_lista = [datos['codigo'], datos['producto'], datos['stock']]
-        print("Registro en lista / Record as list:", registro_lista)
-
-        # Inserta o actualiza el producto en Supabase
-        # Inserts or updates the product in Supabase
-        supabase.table("inventario").upsert(datos).execute()
-        return redirect("/")
-
+        if not datos:
+            return
+        # 'with open' asegura que los datos se escriban físicamente en el disco
+        with open("respaldo_inventario.csv", mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=datos[0].keys())
+            writer.writeheader()
+            writer.writerows(datos)
+            print(">>> ÉXITO: Datos guardados en hardware correctamente.")
     except Exception as e:
-        return f"Error / Error: {str(e)}"
+        print(f">>> ERROR DE PERSISTENCIA: {e}")
+
+
 
 
 # ==============================
@@ -436,7 +453,9 @@ def actualizar_precio_por_llave():
             print(f"SUCCESS: Product {cod} updated / Producto {cod} actualizado")
         else:
             print(f"NOT FOUND: Search key {cod} invalid / Llave de búsqueda {cod} no válida")
-
+# Actualizamos el respaldo local después del cambio de precio
+        res_respaldo = supabase.table("inventario").select("*").execute()
+        backup_local_csv(res_respaldo.data)
         return redirect("/")
     except Exception as e:
         print(f"ERROR: Update failed / Fallo en actualización: {str(e)}")
@@ -458,6 +477,9 @@ def inv_eliminar(codigo):
     - Redirige al index al finalizar / Redirects to index when done.
     """
     supabase.table("inventario").delete().eq("codigo", codigo).execute()
+    # Actualizamos el respaldo local después de eliminar
+    res_respaldo = supabase.table("inventario").select("*").execute()
+    backup_local_csv(res_respaldo.data)
     return redirect("/")
 
 
