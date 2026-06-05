@@ -219,10 +219,9 @@ def obtener_nombre_categoria(id_buscado):
         with open("api/categorias.csv", mode='r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
             for fila in reader:
-                # Normaliza las claves para ignorar tildes y mayúsculas
                 fila_limpia = {
-                    unicodedata.normalize('NFKD', k).encode('ascii', errors='ignore').decode().strip().lower(): v
-                    for k, v in fila.items()
+                    unicodedata.normalize('NFKD', str(k)).encode('ascii', errors='ignore').decode().strip().lower(): v
+                    for k, v in fila.items() if k is not None
                 }
                 if fila_limpia.get('id') == str(id_buscado):
                     return fila_limpia.get('nombre_cat', 'General')
