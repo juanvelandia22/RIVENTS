@@ -216,14 +216,19 @@ def guardar_datos_csv(lista_datos):
 
 def obtener_nombre_categoria(id_buscado):
     try:
-        with open("api/categorias.csv", mode='r', encoding='utf-8') as f:
+        with open("api/categorias.csv", mode='r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
             for fila in reader:
-                if fila['id'] == str(id_buscado):
-                    return fila['nombre_cat']
+                # Normaliza las claves para ignorar tildes y mayúsculas
+                fila_limpia = {
+                    unicodedata.normalize('NFKD', k).encode('ascii', errors='ignore').decode().strip().lower(): v
+                    for k, v in fila.items()
+                }
+                if fila_limpia.get('id') == str(id_buscado):
+                    return fila_limpia.get('nombre_cat', 'General')
         return "General"
     except FileNotFoundError:
-        return "Sin Categoría"
+        return "Sin Categoria"
 
 # ============================================================
 # FLASK APP
