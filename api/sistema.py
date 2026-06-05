@@ -380,7 +380,7 @@ HTML_SISTEMA = """
                         <td><b>{{ p.codigo }}</b></td>
                         <td>{{ p.producto }}</td>
                         <td>${{ "{:,.0f}".format(p.precio) }}</td>
-                        <td>{{ p.existencias }}</td>
+                        <td>{{ p.stock}}</td>
                         <td><span class="badge">{{ p.tipo }}</span></td>
                         <td><a href="/inventario/eliminar/{{ p.codigo }}"><button class="btn-danger">🗑️</button></a></td>
                     </tr>
@@ -644,7 +644,7 @@ def inv_guardar():
         inventario_lista.add_node(nuevo_prod)
 
         datos_preparados = nuevo_prod.to_dict()
-        datos_preparados["existencias"] = float(c.get('stock') or 0)
+        datos_preparados["stock"] = float(c.get('stock') or 0)
         datos_preparados["tipo"]  = c.get('tipo', 'Und')
 
         supabase.table("inventario").upsert(datos_preparados).execute()
@@ -741,7 +741,7 @@ def car_agregar():
     res = supabase.table("inventario").select("*").eq("codigo", cod).execute()
     p   = res.data[0] if res.data else None
 
-    if not p or float(p['existencias']) < cant:
+    if not p or float(p['stock']) < cant:
         return redirect("/")
 
     carrito = session.get('carrito', [])
