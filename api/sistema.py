@@ -840,12 +840,11 @@ def venta_finalizar():
 
     try:
         res = supabase.table("facturas").insert({
-            "cliente_nombre":    cliente.get('nombre', 'Consumidor Final'),
-            "cliente_documento": cliente.get('documento', '0'),
-            "total":             total,
-            "fecha":             fecha,
-            "detalle":           str(carrito)
-        }).execute()
+    "cliente_nombre":    cliente.get('nombre', 'Consumidor Final'),
+    "cliente_document":  cliente.get('documento', '0'),
+    "total":             total,
+    "detalles_json":     str(carrito)
+}).execute()
 
         factura_id    = res.data[0]['id'] if res.data else "?"
         resumen_items = ", ".join([f"{i['nombre']} x{i['cantidad']}" for i in carrito])
@@ -1058,7 +1057,7 @@ def factura_pdf(factura_id):
         pdf.set_fill_color(230, 240, 255)
         pdf.cell(0, 7, "DETALLE / DETAIL", ln=True, fill=True)
 
-        detalle_raw = f.get('detalle', '')
+        detalle_raw = f.get('detalles_json', '')
         try:
             import ast
             items = ast.literal_eval(detalle_raw) if detalle_raw else []
