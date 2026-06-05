@@ -1115,7 +1115,7 @@ def factura_pdf(factura_id):
         pdf.cell(0, 5, limpiar_texto_pdf(f"{NOMBRE_LOCAL} - {DIRECCION}"), ln=True, align="C")
 
         # Enviar PDF
-        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        pdf_bytes = bytes(pdf.output())
         buffer    = io.BytesIO(pdf_bytes)
         buffer.seek(0)
 
