@@ -9,6 +9,7 @@
 # FIX VERCEL: Estructuras dinámicas guardadas en sesión (no globales)
 # ============================================================
 import csv
+import unicodedata
 from flask import Flask, render_template_string, request, redirect, session, send_file, url_for, jsonify
 from supabase import create_client, Client
 from datetime import datetime
@@ -109,7 +110,7 @@ def pila_push(accion: dict):
         session['pila'] = []
     pila = session['pila']
     pila.append(accion)
-    session['pila'] = pila          # Forzar actualización de sesión / Force session update
+    session['pila'] = pila
     print(f"[PILA PUSH] {accion.get('tipo')}")
 
 def pila_pop() -> dict | None:
@@ -235,7 +236,7 @@ app.secret_key = 'pollo_raul_secret_key'
 # ============================================================
 NOMBRE_LOCAL = "POLLO Y CHARCUTERIA RAUL"
 NIT_NEGOCIO  = "123.456.789-0"
-DIRECCION    = "Cúcuta, Norte de Santander"
+DIRECCION    = "Cucuta, Norte de Santander"
 TELEFONO     = "300 000 0000"
 VALOR_IVA    = 0.19
 
@@ -270,6 +271,21 @@ def estandarizar_dato(texto_entrada, mayusculas=False):
         return ""
     limpio = texto_entrada.strip()
     return limpio.upper() if mayusculas else limpio.lower()
+
+# ============================================================
+# FIX PDF: NORMALIZAR TEXTO PARA FPDF (LATIN-1)
+# ============================================================
+def limpiar_texto_pdf(texto):
+    """
+    ESP: Convierte caracteres Unicode (tildes, ñ, guiones especiales, etc.)
+         a su equivalente latin-1 para que fpdf no falle.
+    ENG: Converts Unicode characters (accents, ñ, special dashes, etc.)
+         to their latin-1 equivalent so fpdf doesn't crash.
+    """
+    if not texto:
+        return ""
+    texto = unicodedata.normalize('NFKD', str(texto))
+    return texto.encode('latin-1', errors='ignore').decode('latin-1')
 
 # ============================================================
 # HTML TEMPLATE
@@ -535,12 +551,6 @@ HTML_SISTEMA = """
 # INICIALIZAR SESIÓN / INITIALIZE SESSION
 # ============================================================
 def init_session():
-    """
-    ESP: Inicializa todas las claves de sesión necesarias si no existen.
-         Incluye carrito, cliente y las 3 estructuras del Avance 11.
-    ENG: Initializes all required session keys if they don't exist.
-         Includes cart, client and the 3 Advance 11 structures.
-    """
     if 'carrito' not in session:
         session['carrito'] = []
     if 'cliente' not in session:
@@ -550,7 +560,6 @@ def init_session():
             "puntos": 0,
             "es_frecuente": False
         }
-    # AVANCE 11: Estructuras dinámicas en sesión / Dynamic structures in session
     if 'pila' not in session:
         session['pila'] = []
     if 'cola' not in session:
@@ -593,7 +602,6 @@ def index():
         cliente=session['cliente'],
         historial=his,
         busqueda=buscar,
-        # AVANCE 11
         pila_acciones=pila_lista(),
         cola_turnos=cola_lista(),
         dict_colas_datos=dict_colas_datos()
@@ -630,7 +638,6 @@ def inv_guardar():
             categoria=nombre_cat
         )
 
-        # Avance 10: lista enlazada
         inventario_lista.add_node(nuevo_prod)
 
         datos_preparados = nuevo_prod.to_dict()
@@ -639,15 +646,13 @@ def inv_guardar():
 
         supabase.table("inventario").upsert(datos_preparados).execute()
 
-        # AVANCE 11 — PILA: registrar acción
         pila_push({
             "tipo":          "GUARDAR PRODUCTO",
-            "detalle":       f"{nuevo_prod.nombre} (Cód: {nuevo_prod.codigo})",
+            "detalle":       f"{nuevo_prod.nombre} (Cod: {nuevo_prod.codigo})",
             "hora":          datetime.now().strftime("%H:%M:%S"),
             "datos_reversa": {"codigo": nuevo_prod.codigo}
         })
 
-        # AVANCE 11 — DICT-COLAS: encolar en categoría
         dict_colas_encolar(nombre_cat, datos_preparados)
 
         if not os.environ.get('VERCEL'):
@@ -669,10 +674,9 @@ def inv_eliminar(codigo):
     inventario_lista.delete_node(codigo)
     supabase.table("inventario").delete().eq("codigo", codigo).execute()
 
-    # AVANCE 11 — PILA
     pila_push({
         "tipo":          "ELIMINAR PRODUCTO",
-        "detalle":       f"Código eliminado: {codigo}",
+        "detalle":       f"Codigo eliminado: {codigo}",
         "hora":          datetime.now().strftime("%H:%M:%S"),
         "datos_reversa": {"codigo": codigo}
     })
@@ -700,12 +704,12 @@ def actualizar_precio_por_llave():
             print(f"SUCCESS: Producto {cod} actualizado")
             pila_push({
                 "tipo":          "ACTUALIZAR PRECIO",
-                "detalle":       f"Código {cod} → ${nuevo_p:,.0f}",
+                "detalle":       f"Codigo {cod} -> ${nuevo_p:,.0f}",
                 "hora":          datetime.now().strftime("%H:%M:%S"),
                 "datos_reversa": {"codigo": cod}
             })
         else:
-            print(f"NOT FOUND: Código {cod}")
+            print(f"NOT FOUND: Codigo {cod}")
 
         if not os.environ.get('VERCEL'):
             res_r = supabase.table("inventario").select("*").execute()
@@ -757,7 +761,6 @@ def car_agregar():
 
     session['carrito'] = carrito
 
-    # AVANCE 11 — PILA
     pila_push({
         "tipo":          "AGREGAR AL CARRITO",
         "detalle":       f"{p['producto']} x{cant}",
@@ -844,7 +847,6 @@ def venta_finalizar():
         factura_id    = res.data[0]['id'] if res.data else "?"
         resumen_items = ", ".join([f"{i['nombre']} x{i['cantidad']}" for i in carrito])
 
-        # AVANCE 11 — PILA
         pila_push({
             "tipo":          "FACTURA GENERADA",
             "detalle":       f"Factura #{factura_id} | {cliente.get('nombre')} | ${total:,.0f}",
@@ -852,7 +854,6 @@ def venta_finalizar():
             "datos_reversa": {"factura_id": factura_id}
         })
 
-        # AVANCE 11 — COLA: encolar como turno a entregar
         cola_encolar({
             "cliente":    cliente.get('nombre', 'Consumidor Final'),
             "documento":  cliente.get('documento', '0'),
@@ -872,10 +873,6 @@ def venta_finalizar():
 # ============================================================
 @app.route("/pila/deshacer", methods=["POST"])
 def pila_deshacer():
-    """
-    ESP: Desapila la última acción y ejecuta la lógica de reversa.
-    ENG: Pops the last action and executes reverse logic.
-    """
     init_session()
     accion = pila_pop()
 
@@ -901,17 +898,15 @@ def pila_deshacer():
             if item['codigo'] == codigo:
                 item['cantidad'] -= cant
                 if item['cantidad'] > 0:
-                    # Recalcular total proporcional
                     item['total'] = round(item['total'] * item['cantidad'] / (item['cantidad'] + cant), 2)
                     nuevo_carrito.append(item)
-                # Si queda en 0 o negativo, se descarta
             else:
                 nuevo_carrito.append(item)
         session['carrito'] = nuevo_carrito
         print(f"[UNDO] Removido del carrito: {codigo} x{cant}")
 
     else:
-        print(f"[UNDO] Acción '{tipo}' sin reversa automática / No auto-reverse for '{tipo}'")
+        print(f"[UNDO] Accion '{tipo}' sin reversa automatica / No auto-reverse for '{tipo}'")
 
     return redirect("/")
 
@@ -978,12 +973,6 @@ def dict_colas_recargar():
 # ============================================================
 @app.route("/avance11/estado")
 def avance11_estado():
-    """
-    ESP: Retorna el estado actual de las 3 estructuras en JSON.
-         Visita /avance11/estado en el navegador para verificar.
-    ENG: Returns the current state of the 3 structures in JSON.
-         Visit /avance11/estado in the browser to verify.
-    """
     init_session()
     return jsonify({
         "avance": 11,
@@ -1000,50 +989,51 @@ def avance11_estado():
             "contenido":   cola_lista()
         },
         "modulo_3_dict_colas": {
-            "descripcion": "Diccionario de Colas por categoría / Dict of Queues by category",
+            "descripcion": "Diccionario de Colas por categoria / Dict of Queues by category",
             "categorias":  list(dict_colas_datos().keys()),
             "contenido":   dict_colas_datos()
         }
     })
 
 # ============================================================
-# FACTURA PDF / INVOICE PDF
+# FACTURA PDF / INVOICE PDF  ← ARREGLADO: limpiar_texto_pdf()
 # ============================================================
 @app.route("/factura/pdf/<int:factura_id>")
 def factura_pdf(factura_id):
     """
     ESP: Genera y devuelve el PDF de una factura consultada desde Supabase.
+         FIX: Se usa limpiar_texto_pdf() para evitar errores con caracteres
+         especiales (tildes, ñ, guiones largos, etc.) en fpdf.
     ENG: Generates and returns the PDF of an invoice queried from Supabase.
+         FIX: limpiar_texto_pdf() used to avoid special character errors in fpdf.
     """
     try:
-        # Consultar factura en Supabase / Query invoice from Supabase
         res = supabase.table("facturas").select("*").eq("id", factura_id).execute()
         if not res.data:
             return f"<h2>Factura #{factura_id} no encontrada / Invoice not found</h2><a href='/'>← Volver</a>", 404
 
         f = res.data[0]
 
-        # Construir PDF / Build PDF
         pdf = FPDF()
         pdf.add_page()
         pdf.set_margins(15, 15, 15)
 
-        # Encabezado / Header
+        # Encabezado
         pdf.set_font("Arial", "B", 16)
-        pdf.cell(0, 10, NOMBRE_LOCAL, ln=True, align="C")
+        pdf.cell(0, 10, limpiar_texto_pdf(NOMBRE_LOCAL), ln=True, align="C")
         pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 6, f"NIT: {NIT_NEGOCIO}", ln=True, align="C")
-        pdf.cell(0, 6, DIRECCION, ln=True, align="C")
-        pdf.cell(0, 6, f"Tel: {TELEFONO}", ln=True, align="C")
+        pdf.cell(0, 6, f"NIT: {limpiar_texto_pdf(NIT_NEGOCIO)}", ln=True, align="C")
+        pdf.cell(0, 6, limpiar_texto_pdf(DIRECCION), ln=True, align="C")
+        pdf.cell(0, 6, f"Tel: {limpiar_texto_pdf(TELEFONO)}", ln=True, align="C")
         pdf.ln(4)
 
-        # Línea separadora / Divider
+        # Línea separadora
         pdf.set_draw_color(52, 152, 219)
         pdf.set_line_width(0.8)
         pdf.line(15, pdf.get_y(), 195, pdf.get_y())
         pdf.ln(4)
 
-        # Datos de la factura / Invoice details
+        # Datos de la factura
         pdf.set_font("Arial", "B", 12)
         pdf.cell(0, 8, f"FACTURA No. {f['id']}", ln=True, align="C")
         pdf.set_font("Arial", "", 10)
@@ -1051,21 +1041,20 @@ def factura_pdf(factura_id):
         pdf.cell(0, 6, f"Fecha / Date: {fecha_str}", ln=True, align="C")
         pdf.ln(4)
 
-        # Datos del cliente / Client data
+        # Datos del cliente
         pdf.set_font("Arial", "B", 10)
         pdf.set_fill_color(230, 240, 255)
         pdf.cell(0, 7, "DATOS DEL CLIENTE / CLIENT DATA", ln=True, fill=True)
         pdf.set_font("Arial", "", 10)
-        pdf.cell(0, 6, f"Nombre / Name:     {f.get('cliente_nombre', '---')}", ln=True)
-        pdf.cell(0, 6, f"Cedula / ID:       {f.get('cliente_documento', '---')}", ln=True)
+        pdf.cell(0, 6, f"Nombre / Name:     {limpiar_texto_pdf(f.get('cliente_nombre', '---'))}", ln=True)
+        pdf.cell(0, 6, f"Cedula / ID:       {limpiar_texto_pdf(f.get('cliente_documento', '---'))}", ln=True)
         pdf.ln(4)
 
-        # Detalle de productos / Product detail
+        # Detalle de productos
         pdf.set_font("Arial", "B", 10)
         pdf.set_fill_color(230, 240, 255)
         pdf.cell(0, 7, "DETALLE / DETAIL", ln=True, fill=True)
 
-        # Intentar parsear el detalle si es una lista serializada
         detalle_raw = f.get('detalle', '')
         try:
             import ast
@@ -1074,7 +1063,6 @@ def factura_pdf(factura_id):
             items = []
 
         if items:
-            # Encabezado de tabla / Table header
             pdf.set_font("Arial", "B", 9)
             pdf.set_fill_color(52, 152, 219)
             pdf.set_text_color(255, 255, 255)
@@ -1089,22 +1077,22 @@ def factura_pdf(factura_id):
             fill = False
             for item in items:
                 pdf.set_fill_color(245, 249, 255) if fill else pdf.set_fill_color(255, 255, 255)
-                pdf.cell(70, 6, str(item.get('nombre', '')), border=1, fill=fill)
-                pdf.cell(30, 6, str(item.get('cantidad', '')), border=1, fill=fill, align="C")
-                pdf.cell(30, 6, str(item.get('tipo', '')), border=1, fill=fill, align="C")
+                pdf.cell(70, 6, limpiar_texto_pdf(str(item.get('nombre', ''))), border=1, fill=fill)
+                pdf.cell(30, 6, limpiar_texto_pdf(str(item.get('cantidad', ''))), border=1, fill=fill, align="C")
+                pdf.cell(30, 6, limpiar_texto_pdf(str(item.get('tipo', ''))), border=1, fill=fill, align="C")
                 pdf.cell(40, 6, f"${float(item.get('total', 0)):,.0f}", border=1, fill=fill, align="R")
                 pdf.ln()
                 fill = not fill
         else:
             pdf.set_font("Arial", "I", 9)
-            pdf.cell(0, 6, str(detalle_raw)[:200], ln=True)
+            pdf.cell(0, 6, limpiar_texto_pdf(str(detalle_raw)[:200]), ln=True)
 
         pdf.ln(4)
 
-        # Totales / Totals
-        total      = float(f.get('total', 0))
-        subtotal   = round(total / (1 + VALOR_IVA), 2)
-        iva_valor  = round(total - subtotal, 2)
+        # Totales
+        total     = float(f.get('total', 0))
+        subtotal  = round(total / (1 + VALOR_IVA), 2)
+        iva_valor = round(total - subtotal, 2)
 
         pdf.set_line_width(0.4)
         pdf.line(15, pdf.get_y(), 195, pdf.get_y())
@@ -1124,9 +1112,9 @@ def factura_pdf(factura_id):
         pdf.set_font("Arial", "I", 9)
         pdf.set_text_color(120, 120, 120)
         pdf.cell(0, 5, "Gracias por su compra / Thank you for your purchase", ln=True, align="C")
-        pdf.cell(0, 5, f"{NOMBRE_LOCAL} — {DIRECCION}", ln=True, align="C")
+        pdf.cell(0, 5, limpiar_texto_pdf(f"{NOMBRE_LOCAL} - {DIRECCION}"), ln=True, align="C")
 
-        # Enviar PDF como respuesta / Send PDF as response
+        # Enviar PDF
         pdf_bytes = pdf.output(dest='S').encode('latin-1')
         buffer    = io.BytesIO(pdf_bytes)
         buffer.seek(0)
@@ -1164,7 +1152,7 @@ def generar_reporte_agrupado(lista_datos):
                 print(f"--- TOTAL {cat_actual}: ${acumulado:,.0f} ---")
             cat_actual = item['categoria']
             acumulado  = 0
-            print(f"\n[ CATEGORÍA: {cat_actual} ]")
+            print(f"\n[ CATEGORIA: {cat_actual} ]")
         print(f" > {item['producto']}: ${float(item['precio']):,.0f}")
         acumulado += float(item['precio'])
     if cat_actual:
