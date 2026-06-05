@@ -38,6 +38,69 @@ class Producto:
             "precio": self.precio,
             "categoria": self.categoria
         }
+
+# ============================================================
+# AVANCE 10 MVP - LINKED LIST / LISTA ENLAZADA
+# ============================================================
+class Node:
+    """ESP: Nodo de lista enlazada. ENG: Linked list node."""
+    def __init__(self, product):
+        self.product = product
+        self.next = None
+
+class LinkedList:
+    """ESP: Lista enlazada para inventario. ENG: Linked list for inventory."""
+    def __init__(self):
+        self.head = None
+
+    def add_node(self, product):
+        new_node = Node(product)
+        if self.head is None:
+            self.head = new_node
+            return
+        current = self.head
+        while current.next:
+            current = current.next
+        current.next = new_node
+
+    def delete_node(self, codigo):
+        current = self.head
+        previous = None
+        while current:
+            if current.product.codigo == codigo:
+                if previous is None:
+                    self.head = current.next
+                else:
+                    previous.next = current.next
+                return True
+            previous = current
+            current = current.next
+        print("Producto no encontrado / Product not found")
+        return False
+
+    def find_node(self, codigo):
+        current = self.head
+        while current:
+            if current.product.codigo == codigo:
+                return current.product
+            current = current.next
+        return None
+
+    def display_list(self):
+        current = self.head
+        while current:
+            print(f"{current.product.codigo} - {current.product.nombre}")
+            current = current.next
+
+    def generate_report(self):
+        current = self.head
+        while current:
+            p = current.product
+            print(f"{p.codigo} | {p.nombre} | ${p.precio}")
+            current = current.next
+
+inventario_lista = LinkedList()
+
 ARCHIVO_PERSISTENCIA = "datos_rivents.csv"
 
 def cargar_datos_csv():
@@ -413,54 +476,124 @@ def index():
 # ==============================
 # INVENTARIO / INVENTORY
 # ==============================
+# ==============================
+# INVENTARIO / INVENTORY
+# ==============================
+
+# --- FUNCIÓN DE RESPALDO LOCAL ---
+def backup_local_csv(datos):
+    """Guarda una copia de seguridad en hardware."""
+    
+    try:
+
+        if not datos:
+            return
+
+        with open(
+            "respaldo_inventario.csv",
+            mode='w',
+            newline='',
+            encoding='utf-8'
+        ) as f:
+
+            writer = csv.DictWriter(
+                f,
+                fieldnames=datos[0].keys()
+            )
+
+            writer.writeheader()
+            writer.writerows(datos)
+
+        print(">>> ÉXITO: Datos guardados en hardware.")
+
+    except Exception as e:
+
+        print(f">>> ERROR DE PERSISTENCIA: {e}")
+
+
+# --- RUTA INVENTARIO GUARDAR ---
 @app.route("/inventario/guardar", methods=["POST"])
 def inv_guardar():
-    """
-    ESP: Procesa el formulario de inventario usando TAD, Apareo y Abstracción.
-    ENG: Processes the inventory form using ADT, Pairing, and Abstraction.
-    """
+
     try:
-        # Recuperamos los datos del formulario de Flask
+
         c = request.form
-        
-        # --- 1. LOGICA DE APAREO / PAIRING LOGIC ---
-        # ESP: Cruza el ID del formulario con el archivo 'categorias.csv' para validar la categoría.
-        # ENG: Crosses the form ID with the 'categorias.csv' file to validate the category.
-        id_cat = c.get('categoria_id', '1') 
+
+        # Categoría
+        id_cat = c.get('categoria_id', '1')
         nombre_cat = obtener_nombre_categoria(id_cat)
 
-        # --- 2. TAD: TIPO DE DATO ABSTRACTO / ADT: ABSTRACT DATA TYPE ---
-        # ESP: Encapsula los datos en un objeto 'Producto' garantizando integridad.
-        # ENG: Encapsulates data into a 'Product' object ensuring integrity.
+        # Producto
         nuevo_prod = Producto(
-            codigo=c['codigo'],
-            nombre=c['producto'],
-            precio=c['precio'],
+            codigo=c.get('codigo'),
+            nombre=c.get('producto'),
+            precio=c.get('precio'),
             categoria=nombre_cat
         )
-        
-        # --- 3. CAPA DE ABSTRACCIÓN / ABSTRACTION LAYER ---
-        # ESP: El objeto se transforma en diccionario para ser compatible con Supabase.
-        # ENG: The object transforms into a dictionary to be compatible with Supabase.
-        datos_preparados = nuevo_prod.to_dict()
-        
-        # Campos de stock y tipo (lógica de negocio adicional)
-        datos_preparados["stock"] = float(c.get('stock', 0))
-        datos_preparados["tipo"] = c.get('tipo', 'Und')
-        
-        # Guardado en la base de datos en la nube (Supabase)
-        supabase.table("inventario").upsert(datos_preparados).execute()
 
-        # --- 4. RESPALDO EN HARDWARE (PERSISTENCIA LOCAL) ---
-        # ESP: Sincroniza la base de datos con un archivo físico CSV local.
-        # ENG: Synchronizes the database with a local physical CSV file.
-        res = supabase.table("inventario").select("*").execute()
-        backup_local_csv(res.data)
-        
+        # AVANCE 10 - INSERT INTO LINKED LIST / INSERTAR EN LISTA ENLAZADA
+        inventario_lista.add_node(nuevo_prod)
+
+        datos_preparados = nuevo_prod.to_dict()
+
+        # Campos extra
+        datos_preparados["stock"] = float(
+            c.get('stock') or 0
+        )
+
+        datos_preparados["tipo"] = c.get(
+            'tipo',
+            'Und'
+        )
+
+        # Guardar en Supabase
+        supabase.table("inventario") \
+            .upsert(datos_preparados) \
+            .execute()
+
+        # Respaldo local SOLO fuera de Vercel
+        if not os.environ.get('VERCEL'):
+
+            try:
+
+                res = supabase.table("inventario") \
+                    .select("*") \
+                    .execute()
+
+                backup_local_csv(res.data)
+
+            except Exception as e:
+
+                print(f"Error respaldo local: {e}")
+
         return redirect("/")
+
     except Exception as e:
-        print(f"Error en inv_guardar: {e}")
+
+        print("ERROR INVENTARIO:", e)
+
+        return f"""
+        <h1>ERROR INVENTARIO</h1>
+        <pre>{str(e)}</pre>
+        """
+
+
+    except Exception as e:
+        print(f"Error: {e}")
         return redirect("/")
+# --- RESPALDO EN HARDWARE ---
+# ESP: Solo ejecutamos el respaldo local si NO estamos en Vercel.
+# ENG: Only execute local backup if NOT on Vercel.
+    if not os.environ.get('VERCEL'):
+        try:
+            res = supabase.table("inventario").select("*").execute()
+            backup_local_csv(res.data)
+        except Exception as e:
+            print(f"Error de respaldo local: {e}")
+# IMPORTANTE: El return debe estar fuera del bloque 'if' 
+# para que siempre redireccione al terminar.
+    return redirect("/")
+
 
 
 
@@ -523,6 +656,8 @@ def inv_eliminar(codigo):
     -  Executes DELETE in Supabase filtering by the given code.
     - Redirige al index al finalizar / Redirects to index when done.
     """
+    # AVANCE 10 - DYNAMIC DELETE / ELIMINACIÓN DINÁMICA
+    inventario_lista.delete_node(codigo)
     supabase.table("inventario").delete().eq("codigo", codigo).execute()
     # Actualizamos el respaldo local después de eliminar
     res_respaldo = supabase.table("inventario").select("*").execute()
@@ -716,6 +851,17 @@ def generar_reporte_agrupado(lista_datos):
     if cat_actual:
         print(f"--- TOTAL {cat_actual}: ${acumulado:,.0f} ---")
     print("="*40 + "\n")
+# ============================================================
+# AVANCE 10 - REPORT BY TRAVERSING NODES
+# ============================================================
+@app.route("/inventario/reporte")
+def reporte_lista_enlazada():
+    inventario_lista.generate_report()
+    return """
+    <h2>Reporte generado en consola / Report generated in console</h2>
+    <a href="/">Volver / Back</a>
+    """
+
 # ==============================
 # RUN / EJECUCIÓN
 # ==============================
