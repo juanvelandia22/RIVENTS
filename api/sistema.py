@@ -1007,6 +1007,143 @@ def avance11_estado():
     })
 
 # ============================================================
+# FACTURA PDF / INVOICE PDF
+# ============================================================
+@app.route("/factura/pdf/<int:factura_id>")
+def factura_pdf(factura_id):
+    """
+    ESP: Genera y devuelve el PDF de una factura consultada desde Supabase.
+    ENG: Generates and returns the PDF of an invoice queried from Supabase.
+    """
+    try:
+        # Consultar factura en Supabase / Query invoice from Supabase
+        res = supabase.table("facturas").select("*").eq("id", factura_id).execute()
+        if not res.data:
+            return f"<h2>Factura #{factura_id} no encontrada / Invoice not found</h2><a href='/'>← Volver</a>", 404
+
+        f = res.data[0]
+
+        # Construir PDF / Build PDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_margins(15, 15, 15)
+
+        # Encabezado / Header
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, NOMBRE_LOCAL, ln=True, align="C")
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 6, f"NIT: {NIT_NEGOCIO}", ln=True, align="C")
+        pdf.cell(0, 6, DIRECCION, ln=True, align="C")
+        pdf.cell(0, 6, f"Tel: {TELEFONO}", ln=True, align="C")
+        pdf.ln(4)
+
+        # Línea separadora / Divider
+        pdf.set_draw_color(52, 152, 219)
+        pdf.set_line_width(0.8)
+        pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+        pdf.ln(4)
+
+        # Datos de la factura / Invoice details
+        pdf.set_font("Arial", "B", 12)
+        pdf.cell(0, 8, f"FACTURA No. {f['id']}", ln=True, align="C")
+        pdf.set_font("Arial", "", 10)
+        fecha_str = f.get('fecha', '')[:16].replace('T', ' ')
+        pdf.cell(0, 6, f"Fecha / Date: {fecha_str}", ln=True, align="C")
+        pdf.ln(4)
+
+        # Datos del cliente / Client data
+        pdf.set_font("Arial", "B", 10)
+        pdf.set_fill_color(230, 240, 255)
+        pdf.cell(0, 7, "DATOS DEL CLIENTE / CLIENT DATA", ln=True, fill=True)
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(0, 6, f"Nombre / Name:     {f.get('cliente_nombre', '---')}", ln=True)
+        pdf.cell(0, 6, f"Cedula / ID:       {f.get('cliente_documento', '---')}", ln=True)
+        pdf.ln(4)
+
+        # Detalle de productos / Product detail
+        pdf.set_font("Arial", "B", 10)
+        pdf.set_fill_color(230, 240, 255)
+        pdf.cell(0, 7, "DETALLE / DETAIL", ln=True, fill=True)
+
+        # Intentar parsear el detalle si es una lista serializada
+        detalle_raw = f.get('detalle', '')
+        try:
+            import ast
+            items = ast.literal_eval(detalle_raw) if detalle_raw else []
+        except:
+            items = []
+
+        if items:
+            # Encabezado de tabla / Table header
+            pdf.set_font("Arial", "B", 9)
+            pdf.set_fill_color(52, 152, 219)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(70, 7, "Producto / Product", border=1, fill=True)
+            pdf.cell(30, 7, "Cantidad / Qty", border=1, fill=True, align="C")
+            pdf.cell(30, 7, "Tipo / Unit", border=1, fill=True, align="C")
+            pdf.cell(40, 7, "Total", border=1, fill=True, align="R")
+            pdf.ln()
+
+            pdf.set_font("Arial", "", 9)
+            pdf.set_text_color(0, 0, 0)
+            fill = False
+            for item in items:
+                pdf.set_fill_color(245, 249, 255) if fill else pdf.set_fill_color(255, 255, 255)
+                pdf.cell(70, 6, str(item.get('nombre', '')), border=1, fill=fill)
+                pdf.cell(30, 6, str(item.get('cantidad', '')), border=1, fill=fill, align="C")
+                pdf.cell(30, 6, str(item.get('tipo', '')), border=1, fill=fill, align="C")
+                pdf.cell(40, 6, f"${float(item.get('total', 0)):,.0f}", border=1, fill=fill, align="R")
+                pdf.ln()
+                fill = not fill
+        else:
+            pdf.set_font("Arial", "I", 9)
+            pdf.cell(0, 6, str(detalle_raw)[:200], ln=True)
+
+        pdf.ln(4)
+
+        # Totales / Totals
+        total      = float(f.get('total', 0))
+        subtotal   = round(total / (1 + VALOR_IVA), 2)
+        iva_valor  = round(total - subtotal, 2)
+
+        pdf.set_line_width(0.4)
+        pdf.line(15, pdf.get_y(), 195, pdf.get_y())
+        pdf.ln(2)
+        pdf.set_font("Arial", "", 10)
+        pdf.cell(140, 6, "Subtotal:", align="R")
+        pdf.cell(40, 6, f"${subtotal:,.0f}", ln=True, align="R")
+        pdf.cell(140, 6, f"IVA ({int(VALOR_IVA*100)}%):", align="R")
+        pdf.cell(40, 6, f"${iva_valor:,.0f}", ln=True, align="R")
+        pdf.set_font("Arial", "B", 12)
+        pdf.set_text_color(39, 174, 96)
+        pdf.cell(140, 8, "TOTAL:", align="R")
+        pdf.cell(40, 8, f"${total:,.0f}", ln=True, align="R")
+        pdf.set_text_color(0, 0, 0)
+
+        pdf.ln(6)
+        pdf.set_font("Arial", "I", 9)
+        pdf.set_text_color(120, 120, 120)
+        pdf.cell(0, 5, "Gracias por su compra / Thank you for your purchase", ln=True, align="C")
+        pdf.cell(0, 5, f"{NOMBRE_LOCAL} — {DIRECCION}", ln=True, align="C")
+
+        # Enviar PDF como respuesta / Send PDF as response
+        pdf_bytes = pdf.output(dest='S').encode('latin-1')
+        buffer    = io.BytesIO(pdf_bytes)
+        buffer.seek(0)
+
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=False,
+            download_name=f"factura_{factura_id}.pdf"
+        )
+
+    except Exception as e:
+        print(f"ERROR GENERANDO PDF: {e}")
+        return f"<h2>Error al generar PDF</h2><pre>{str(e)}</pre><a href='/'>← Volver</a>", 500
+
+
+# ============================================================
 # REPORTE LISTA ENLAZADA (AVANCE 10)
 # ============================================================
 @app.route("/inventario/reporte")
